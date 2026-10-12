@@ -117,3 +117,14 @@ Full documentation for Actionsflow lives [on the website](https://actionsflow.gi
 - [Creating Triggers for Actionsflow](https://actionsflow.github.io/docs/creating-triggers/) - Learn more about how to create your own trigger for Actionsflow
 - [FAQs](https://actionsflow.github.io/docs/faqs/) - Actionsflow FAQs
 - [Upgrade Guide](https://actionsflow.github.io/docs/upgrade/)
+
+# 💼 Stellenanzeigen rund um 66793 Saarwellingen
+
+`jobs/crawl.mjs` sammelt Stellenanzeigen im Umkreis von 66793 und behält nur Stellen, die mit dem Auto in höchstens 30 Minuten erreichbar sind. Das Ergebnis ist eine filterbare HTML-Seite unter [`docs/index.html`](docs/index.html).
+
+- **Quellen:** die Jobbörse der Bundesagentur für Arbeit (öffentliche API, ohne Schlüssel). Darin stehen auch viele Anzeigen anderer Portale. Adzuna kommt optional dazu: dafür die Repository-Secrets `ADZUNA_APP_ID` und `ADZUNA_APP_KEY` anlegen (kostenlos unter developer.adzuna.com).
+- **Fahrzeit:** Autofahrzeit ohne Verkehr über OSRM/OpenStreetMap. Ist der Routing-Dienst nicht erreichbar, wird sie aus der Luftlinie geschätzt (auf der Seite mit „≈“ markiert). Ergebnisse werden in `jobs/drive-cache.json` gecacht.
+- **Filter auf der Seite:** Freitext, max. Fahrzeit, Arbeitsort, Angebotsart (Arbeit, Ausbildung, Praktikum), Arbeitszeit (Vollzeit, Teilzeit, Schicht, Homeoffice, Minijob), Veröffentlichungsdatum, Zeitarbeit ausblenden, Sortierung.
+- **Automatisch:** `.github/workflows/jobs-crawler.yml` läuft täglich (und manuell über „Run workflow“). Der Workflow committet `docs/` und lädt die Seite zusätzlich als Artefakt hoch. Wer die Seite online haben will, aktiviert GitHub Pages mit „Deploy from a branch“ → `main` / `/docs`.
+- **Lokal:** `node jobs/crawl.mjs` (Node ≥ 20, keine Abhängigkeiten), dann `docs/index.html` im Browser öffnen.
+- **Anpassen:** PLZ, Koordinaten, Suchradius und maximale Fahrzeit stehen in `jobs/config.json`.

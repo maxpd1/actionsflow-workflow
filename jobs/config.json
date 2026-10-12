@@ -1,0 +1,21 @@
+{
+  "plz": "66793",
+  "ortName": "Saarwellingen",
+  "origin": { "lat": 49.3542, "lon": 6.8075 },
+  "searchRadiusKm": 50,
+  "maxDriveMinutes": 30,
+  "angebotsarten": {
+    "1": "Arbeit",
+    "4": "Ausbildung / Duales Studium",
+    "34": "Praktikum / Trainee"
+  },
+  "arbeitszeiten": {
+    "vz": "Vollzeit",
+    "tz": "Teilzeit",
+    "snw": "Schicht / Nacht / Wochenende",
+    "ho": "Homeoffice",
+    "mj": "Minijob"
+  },
+  "maxPagesPerQuery": 100,
+  "pageSize": 100
+}
