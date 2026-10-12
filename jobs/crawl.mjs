@@ -230,44 +230,49 @@ async function crawlAdzuna() {
 // Geocodierung (die BA-API v6 liefert keine Koordinaten mehr)
 // ---------------------------------------------------------------------------
 
+const GEO_CACHE_VERSION = 2;
+const GEO_HEADERS = { 'User-Agent': 'jobs-crawler (github.com/maxpd1/actionsflow-workflow)', 'Accept-Language': 'de' };
+
+async function nominatim(params) {
+  const qs = new URLSearchParams({ format: 'jsonv2', limit: '1', ...params });
+  const { data } = await fetchJson(`${NOMINATIM_BASE}/search?${qs}`, { headers: GEO_HEADERS }, 3);
+  await sleep(1100); // Nominatim erlaubt höchstens 1 Anfrage pro Sekunde
+  return data?.[0] ? { lat: Number(data[0].lat), lon: Number(data[0].lon) } : null;
+}
+
 async function geocodeMissing(jobs) {
   let cache = {};
   try { cache = JSON.parse(await readFile(GEO_CACHE_FILE, 'utf8')); } catch {}
+  if (cache.version !== GEO_CACHE_VERSION) cache = { version: GEO_CACHE_VERSION, places: {} };
   const keyOf = (j) => `${j.plz}|${j.ort}`;
   const todo = [...new Set(jobs.filter((j) => j.lat == null && (j.plz || j.ort)).map(keyOf))]
-    .filter((k) => !(k in cache));
-  log(`Geocodierung: ${todo.length} neue Orte (Cache: ${Object.keys(cache).length})`);
+    .filter((k) => !(k in cache.places));
+  log(`Geocodierung: ${todo.length} neue Orte (Cache: ${Object.keys(cache.places).length})`);
 
+  // Suchfenster rund um den Startort, damit gleichnamige Orte woanders nicht gewinnen
+  const d = 1.0;
+  const viewbox = [config.origin.lon - d, config.origin.lat + d, config.origin.lon + d, config.origin.lat - d].join(',');
   for (const key of todo) {
     const [plz, ort] = key.split('|');
-    // "Dillingen, Saar" -> "Dillingen"; Zusätze stören die Suche eher
     const place = ort.replace(/,.*$/, '').replace(/\s*\(.*\)$/, '').trim();
-    const qs = new URLSearchParams({ format: 'jsonv2', limit: '1', countrycodes: 'de,fr,lu' });
-    if (plz) qs.set('postalcode', plz);
-    if (place) qs.set(plz ? 'city' : 'q', place);
     try {
-      let { data } = await fetchJson(`${NOMINATIM_BASE}/search?${qs}`, {
-        headers: { 'User-Agent': 'jobs-crawler (github.com/maxpd1/actionsflow-workflow)', 'Accept-Language': 'de' },
-      }, 3);
-      if (!data?.length && plz && place) {
-        // PLZ und Ort passen nicht immer zusammen: nur mit der PLZ erneut versuchen
-        qs.delete('city');
-        await sleep(1100);
-        ({ data } = await fetchJson(`${NOMINATIM_BASE}/search?${qs}`, {
-          headers: { 'User-Agent': 'jobs-crawler (github.com/maxpd1/actionsflow-workflow)', 'Accept-Language': 'de' },
-        }, 3));
-      }
-      cache[key] = data?.[0] ? { lat: Number(data[0].lat), lon: Number(data[0].lon) } : null;
+      // Nur die PLZ liefert den Mittelpunkt des PLZ-Gebiets (genauer als die Stadtmitte)
+      let c = plz ? await nominatim({ postalcode: plz, countrycodes: 'de' }) : null;
+      if (!c && place) c = await nominatim({ q: place, countrycodes: 'de,fr,lu', viewbox, bounded: '1' });
+      // Unplausible Treffer verwerfen (Stellen liegen höchstens im Suchradius)
+      if (c && haversineKm(config.origin, c) > config.searchRadiusKm * 1.5) c = null;
+      cache.places[key] = c;
     } catch (err) {
       log(`Geocodierung fehlgeschlagen für ${key}: ${err.message}`);
     }
-    await sleep(1100); // Nominatim erlaubt höchstens 1 Anfrage pro Sekunde
   }
 
   for (const j of jobs) {
-    const c = j.lat == null ? cache[keyOf(j)] : null;
+    const c = j.lat == null ? cache.places[keyOf(j)] : null;
     if (c) { j.lat = c.lat; j.lon = c.lon; }
   }
+  const missing = jobs.filter((j) => j.lat == null).length;
+  if (missing) log(`Geocodierung: ${missing} Stellen ohne Koordinaten (werden ausgelassen)`);
   await writeFile(GEO_CACHE_FILE, JSON.stringify(cache, null, 0) + '\n');
 }
 
