@@ -20,7 +20,9 @@ const config = JSON.parse(await readFile(join(here, 'config.json'), 'utf8'));
 const BA_BASE = process.env.BA_API_BASE || 'https://rest.arbeitsagentur.de/jobboerse/jobsuche-service';
 const BA_KEY = process.env.BA_API_KEY || 'jobboerse-jobsuche';
 const OSRM_BASE = process.env.OSRM_BASE || 'https://router.project-osrm.org';
+const NOMINATIM_BASE = process.env.NOMINATIM_BASE || 'https://nominatim.openstreetmap.org';
 const CACHE_FILE = join(here, 'drive-cache.json');
+const GEO_CACHE_FILE = join(here, 'geo-cache.json');
 const OUT_DIR = join(root, process.env.OUT_DIR || 'docs');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -225,6 +227,51 @@ async function crawlAdzuna() {
 }
 
 // ---------------------------------------------------------------------------
+// Geocodierung (die BA-API v6 liefert keine Koordinaten mehr)
+// ---------------------------------------------------------------------------
+
+async function geocodeMissing(jobs) {
+  let cache = {};
+  try { cache = JSON.parse(await readFile(GEO_CACHE_FILE, 'utf8')); } catch {}
+  const keyOf = (j) => `${j.plz}|${j.ort}`;
+  const todo = [...new Set(jobs.filter((j) => j.lat == null && (j.plz || j.ort)).map(keyOf))]
+    .filter((k) => !(k in cache));
+  log(`Geocodierung: ${todo.length} neue Orte (Cache: ${Object.keys(cache).length})`);
+
+  for (const key of todo) {
+    const [plz, ort] = key.split('|');
+    // "Dillingen, Saar" -> "Dillingen"; Zusätze stören die Suche eher
+    const place = ort.replace(/,.*$/, '').replace(/\s*\(.*\)$/, '').trim();
+    const qs = new URLSearchParams({ format: 'jsonv2', limit: '1', countrycodes: 'de,fr,lu' });
+    if (plz) qs.set('postalcode', plz);
+    if (place) qs.set(plz ? 'city' : 'q', place);
+    try {
+      let { data } = await fetchJson(`${NOMINATIM_BASE}/search?${qs}`, {
+        headers: { 'User-Agent': 'jobs-crawler (github.com/maxpd1/actionsflow-workflow)', 'Accept-Language': 'de' },
+      }, 3);
+      if (!data?.length && plz && place) {
+        // PLZ und Ort passen nicht immer zusammen: nur mit der PLZ erneut versuchen
+        qs.delete('city');
+        await sleep(1100);
+        ({ data } = await fetchJson(`${NOMINATIM_BASE}/search?${qs}`, {
+          headers: { 'User-Agent': 'jobs-crawler (github.com/maxpd1/actionsflow-workflow)', 'Accept-Language': 'de' },
+        }, 3));
+      }
+      cache[key] = data?.[0] ? { lat: Number(data[0].lat), lon: Number(data[0].lon) } : null;
+    } catch (err) {
+      log(`Geocodierung fehlgeschlagen für ${key}: ${err.message}`);
+    }
+    await sleep(1100); // Nominatim erlaubt höchstens 1 Anfrage pro Sekunde
+  }
+
+  for (const j of jobs) {
+    const c = j.lat == null ? cache[keyOf(j)] : null;
+    if (c) { j.lat = c.lat; j.lon = c.lon; }
+  }
+  await writeFile(GEO_CACHE_FILE, JSON.stringify(cache, null, 0) + '\n');
+}
+
+// ---------------------------------------------------------------------------
 // Fahrzeiten
 // ---------------------------------------------------------------------------
 
@@ -307,10 +354,11 @@ async function main() {
   }
   if (!jobs.length) throw new Error('Keine Stellen gefunden – alle Quellen fehlgeschlagen?');
 
+  await geocodeMissing(jobs);
   await addDriveTimes(jobs);
 
   const filtered = dedupe(jobs)
-    .filter((j) => j.driveMinutes == null || j.driveMinutes <= config.maxDriveMinutes)
+    .filter((j) => j.driveMinutes != null && j.driveMinutes <= config.maxDriveMinutes)
     .map((j) => ({
       ...j,
       angebotsart: [...j.angebotsart],

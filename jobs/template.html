@@ -156,7 +156,6 @@ footer a { color: inherit; }
       <div class="field">
         <label class="label" for="f-drive">Max. Fahrzeit <output id="o-drive">30 min</output></label>
         <input id="f-drive" type="range" min="5" max="30" step="1" value="30">
-        <div class="checks"><label><input id="f-unknown" type="checkbox"> Ohne bekannte Fahrzeit zeigen</label></div>
       </div>
       <div class="field">
         <label class="label" for="f-ort">Arbeitsort</label>
@@ -276,7 +275,6 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       return {
         q: $('f-q').value.trim().toLowerCase(),
         drive: +$('f-drive').value,
-        unknown: $('f-unknown').checked,
         ort: $('f-ort').value,
         art: checked($('f-art')),
         zeit: checked($('f-zeit')),
@@ -289,7 +287,6 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     function applyState(s) {
       $('f-q').value = s.q || '';
       $('f-drive').value = s.drive || maxMin;
-      $('f-unknown').checked = !!s.unknown;
       $('f-ort').value = [...$('f-ort').options].some((o) => o.value === s.ort) ? s.ort : '';
       setChecked($('f-art'), s.art); setChecked($('f-zeit'), s.zeit); setChecked($('f-src'), s.src);
       $('f-days').value = String(s.days || 0);
@@ -335,7 +332,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       $('o-drive').textContent = `${s.drive} min`;
       const words = s.q.split(/\s+/).filter(Boolean);
       const res = jobs.filter((j) =>
-        (j.driveMinutes == null ? s.unknown : j.driveMinutes <= s.drive) &&
+        (j.driveMinutes ?? Infinity) <= s.drive &&
         (!s.ort || j.ort === s.ort) &&
         (!s.art.length || j.angebotsart.some((a) => s.art.includes(a))) &&
         (!s.zeit.length || j.arbeitszeit.some((a) => s.zeit.includes(a))) &&
