@@ -246,7 +246,8 @@ async function geocodeMissing(jobs) {
   if (cache.version !== GEO_CACHE_VERSION) cache = { version: GEO_CACHE_VERSION, places: {} };
   const keyOf = (j) => `${j.plz}|${j.ort}`;
   const todo = [...new Set(jobs.filter((j) => j.lat == null && (j.plz || j.ort)).map(keyOf))]
-    .filter((k) => !(k in cache.places));
+    .filter((k) => !(k in cache.places))
+    .sort((a, b) => (a.startsWith('|') ? 1 : 0) - (b.startsWith('|') ? 1 : 0));
   log(`Geocodierung: ${todo.length} neue Orte (Cache: ${Object.keys(cache.places).length})`);
 
   // Suchfenster rund um den Startort, damit gleichnamige Orte woanders nicht gewinnen
@@ -258,6 +259,11 @@ async function geocodeMissing(jobs) {
     try {
       // Nur die PLZ liefert den Mittelpunkt des PLZ-Gebiets (genauer als die Stadtmitte)
       let c = plz ? await nominatim({ postalcode: plz, countrycodes: 'de' }) : null;
+      // Ohne PLZ: gleichnamigen Ort mit PLZ aus den Daten übernehmen ("Neunkirchen, Saar" gibt es mehrfach)
+      if (!c && !plz) {
+        const twin = jobs.find((j) => j.ort === ort && j.plz && cache.places[keyOf(j)]);
+        if (twin) c = cache.places[keyOf(twin)];
+      }
       if (!c && place) c = await nominatim({ q: place, countrycodes: 'de,fr,lu', viewbox, bounded: '1' });
       // Unplausible Treffer verwerfen (Stellen liegen höchstens im Suchradius)
       if (c && haversineKm(config.origin, c) > config.searchRadiusKm * 1.5) c = null;
@@ -329,8 +335,10 @@ async function addDriveTimes(jobs) {
     if (j.lat == null || j.lon == null) { j.driveMinutes = null; continue; }
     j.distanceKm = Math.round(haversineKm(config.origin, j) * 10) / 10;
     const cached = cache.durations[coordKey(j.lat, j.lon)];
-    j.driveMinutes = cached ?? estimateMinutes(j.distanceKm);
-    j.driveEstimated = cached == null;
+    // Routing-Ausreißer (z. B. Punkt an einer Sackgasse eingerastet) durch die Schätzung ersetzen
+    const plausible = cached != null && cached <= estimateMinutes(j.distanceKm) * 1.8 + 5;
+    j.driveMinutes = plausible ? cached : estimateMinutes(j.distanceKm);
+    j.driveEstimated = !plausible;
   }
   await writeFile(CACHE_FILE, JSON.stringify(cache, null, 0) + '\n');
 }
