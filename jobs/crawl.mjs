@@ -73,9 +73,9 @@ async function baPage(params, page) {
       if (!baPath) {
         baPath = path;
         baHeaders = headers;
-        const sample = (res.data.stellenangebote || res.data.ergebnisse || [])[0];
+        const sample = baItems(res.data)[0];
         log(`BA-API: verwende ${path} mit Header-Variante ${hi + 1}; Antwortfelder: ${Object.keys(res.data).join(', ')}`);
-        if (sample) log(`BA-API: Felder einer Stelle: ${JSON.stringify(sample).slice(0, 600)}`);
+        if (sample) log(`BA-API: Felder einer Stelle: ${JSON.stringify(sample).slice(0, 1500)}`);
       }
       return res.data;
     }
@@ -83,41 +83,63 @@ async function baPage(params, page) {
   throw new Error(`Kein BA-Endpunkt erreichbar: ${tried.join('; ')}`);
 }
 
+// v4 liefert "stellenangebote", v6 "ergebnisliste"
+const baItems = (data) => data?.stellenangebote || data?.ergebnisliste || data?.ergebnisse || [];
+
 // Holt alle Seiten einer Suchanfrage und gibt die Rohdaten zurück.
 async function baQuery(params, label) {
   const first = await baPage(params, 1);
-  const items = [...(first.stellenangebote || first.ergebnisse || [])];
+  const items = [...baItems(first)];
   const total = Number(first.maxErgebnisse ?? first.anzahlErgebnisse ?? items.length);
   const pages = Math.min(Math.ceil(total / config.pageSize), config.maxPagesPerQuery);
   for (let start = 2; start <= pages; start += 4) {
     const batch = [];
     for (let p = start; p < start + 4 && p <= pages; p++) batch.push(baPage(params, p));
     for (const data of await Promise.all(batch)) {
-      items.push(...(data.stellenangebote || data.ergebnisse || []));
+      items.push(...baItems(data));
     }
     await sleep(200);
   }
   log(`BA ${label}: ${items.length} von ${total} Treffern`);
+  if (total > 0 && !items.length) {
+    throw new Error(`BA-API meldet ${total} Treffer, aber keine Stellen im Ergebnis. Felder: ${Object.keys(first).join(', ')}`);
+  }
   return items;
 }
 
+const baRefnr = (raw) => raw.refnr || raw.referenznummer || raw.hashId || raw.id;
+const asText = (v) => (v && typeof v === 'object' ? v.name || v.bezeichnung || v.text || '' : v || '');
+
+// Sucht rekursiv das erste Objekt mit lat/lon (Koordinaten liegen je nach API-Version unterschiedlich tief)
+function findCoords(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 4) return null;
+  const lat = obj.lat ?? obj.latitude ?? obj.breitengrad;
+  const lon = obj.lon ?? obj.lng ?? obj.longitude ?? obj.laengengrad;
+  if (lat != null && lon != null && !isNaN(lat) && !isNaN(lon)) return { lat: Number(lat), lon: Number(lon) };
+  for (const v of Object.values(obj)) {
+    const c = findCoords(v, depth + 1);
+    if (c) return c;
+  }
+  return null;
+}
+
 function baNormalize(raw) {
-  const refnr = raw.refnr || raw.referenznummer;
-  const ort = raw.arbeitsort || raw.arbeitsorte?.[0] || {};
-  const coords = ort.koordinaten || {};
+  const refnr = baRefnr(raw);
+  const ort = raw.arbeitsort || raw.arbeitsorte?.[0] || raw.arbeitsortAdresse || raw.stellenlokationen?.[0]?.adresse || {};
+  const coords = findCoords(ort) || findCoords(raw) || {};
   return {
     id: `ba:${refnr}`,
     source: 'Arbeitsagentur',
-    title: raw.titel || raw.stellenangebotsTitel || raw.beruf || '(ohne Titel)',
-    beruf: raw.beruf || '',
-    employer: raw.arbeitgeber || '',
-    ort: ort.ort || '',
-    plz: ort.plz || '',
+    title: asText(raw.titel || raw.stellenangebotsTitel || raw.stellentitel || raw.stellenbezeichnung || raw.beruf || raw.hauptberuf) || '(ohne Titel)',
+    beruf: asText(raw.beruf || raw.hauptberuf),
+    employer: asText(raw.arbeitgeber || raw.firma || raw.arbeitgeberName),
+    ort: ort.ort || ort.stadt || '',
+    plz: String(ort.plz || ''),
     region: ort.region || '',
     lat: coords.lat ?? null,
     lon: coords.lon ?? null,
-    published: raw.aktuelleVeroeffentlichungsdatum || raw.veroeffentlichungsdatum || null,
-    start: raw.eintrittsdatum || null,
+    published: (raw.aktuelleVeroeffentlichungsdatum || raw.veroeffentlichungsdatum || raw.datumErsteVeroeffentlichung || '').slice(0, 10) || null,
+    start: (raw.eintrittsdatum || '').slice(0, 10) || null,
     url: `https://www.arbeitsagentur.de/jobsuche/jobdetail/${encodeURIComponent(refnr)}`,
     externalUrl: raw.externeUrl || null,
     angebotsart: new Set(),
@@ -129,7 +151,7 @@ function baNormalize(raw) {
 async function crawlBA() {
   const jobs = new Map();
   const add = (raw, apply) => {
-    const refnr = raw.refnr || raw.referenznummer;
+    const refnr = baRefnr(raw);
     if (!refnr) return;
     const id = `ba:${refnr}`;
     if (!jobs.has(id)) jobs.set(id, baNormalize(raw));
