@@ -31,7 +31,7 @@ async function fetchJson(url, options = {}, attempts = 4) {
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await fetch(url, { ...options, signal: AbortSignal.timeout(30000) });
-      if (res.status === 404) return { status: 404 };
+      if (res.status === 401 || res.status === 403 || res.status === 404) return { status: res.status };
       if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
       return { status: res.status, data: await res.json() };
@@ -48,7 +48,14 @@ async function fetchJson(url, options = {}, attempts = 4) {
 // ---------------------------------------------------------------------------
 
 const BA_PATHS = ['/pc/v4/jobs', '/pc/v6/jobs', '/pc/v4/app/jobs'];
+// Die API lehnt manche Clients mit 403 ab; deshalb mehrere Varianten durchprobieren.
+const BA_HEADER_VARIANTS = [
+  { 'X-API-Key': BA_KEY, 'User-Agent': 'Jobsuche/2.9.2 (de.arbeitsagentur.jobboerse; build:1077; iOS 15.1.0) Alamofire/5.4.4' },
+  { 'X-API-Key': BA_KEY, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36', Accept: 'application/json' },
+  { 'X-API-KEY': BA_KEY, 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36', Accept: 'application/json' },
+];
 let baPath = null;
+let baHeaders = null;
 
 async function baPage(params, page) {
   const qs = new URLSearchParams({
@@ -58,17 +65,22 @@ async function baPage(params, page) {
     page: String(page),
     ...params,
   });
-  const headers = { 'X-API-Key': BA_KEY, 'User-Agent': 'jobs-crawler (github actions)' };
+  const tried = [];
   for (const path of baPath ? [baPath] : BA_PATHS) {
-    const res = await fetchJson(`${BA_BASE}${path}?${qs}`, { headers });
-    if (res.status === 404) continue;
-    if (!baPath) {
-      baPath = path;
-      log(`BA-API: verwende ${path}`);
+    for (const [hi, headers] of (baHeaders ? [baHeaders] : BA_HEADER_VARIANTS).entries()) {
+      const res = await fetchJson(`${BA_BASE}${path}?${qs}`, { headers });
+      if (!res.data) { tried.push(`${path} (Header-Variante ${hi + 1}): HTTP ${res.status}`); continue; }
+      if (!baPath) {
+        baPath = path;
+        baHeaders = headers;
+        const sample = (res.data.stellenangebote || res.data.ergebnisse || [])[0];
+        log(`BA-API: verwende ${path} mit Header-Variante ${hi + 1}; Antwortfelder: ${Object.keys(res.data).join(', ')}`);
+        if (sample) log(`BA-API: Felder einer Stelle: ${JSON.stringify(sample).slice(0, 600)}`);
+      }
+      return res.data;
     }
-    return res.data;
   }
-  throw new Error('Kein BA-Endpunkt erreichbar');
+  throw new Error(`Kein BA-Endpunkt erreichbar: ${tried.join('; ')}`);
 }
 
 // Holt alle Seiten einer Suchanfrage und gibt die Rohdaten zurück.
