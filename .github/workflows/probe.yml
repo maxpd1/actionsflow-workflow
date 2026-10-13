@@ -1,7 +1,7 @@
 name: Probe regionale Jobbörsen (temporär)
 on:
   push:
-    paths: ["jobs/probe.mjs", ".github/workflows/probe.yml"]
+    paths: ["jobs/probe.mjs", "jobs/regional.mjs", ".github/workflows/probe.yml"]
 jobs:
   probe:
     runs-on: ubuntu-latest
