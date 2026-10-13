@@ -264,7 +264,8 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     };
     checkList($('f-art'), counts('angebotsart'), 'art');
     checkList($('f-zeit'), counts('arbeitszeit'), 'zeit');
-    const sources = counts('source');
+    jobs.forEach((j) => { j._sources = [j.source, ...(j.alsoAt || [])]; });
+    const sources = counts('_sources');
     checkList($('f-src'), sources, 'src');
     $('src-field').hidden = sources.length < 2;
     if (sources.some(([s]) => s === 'Adzuna')) $('src-extra').textContent = ' sowie Adzuna';
@@ -350,7 +351,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         (!s.ort || j.ort === s.ort) &&
         (!s.art.length || j.angebotsart.some((a) => s.art.includes(a))) &&
         (!s.zeit.length || j.arbeitszeit.some((a) => s.zeit.includes(a))) &&
-        (!s.src.length || s.src.includes(j.source)) &&
+        (!s.src.length || j._sources.some((x) => s.src.includes(x))) &&
         (!s.days || j._age <= s.days) &&
         (!s.noza || !j.zeitarbeit) &&
         words.every((w) => j._text.includes(w))
