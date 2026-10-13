@@ -4,6 +4,7 @@
 //
 // Quellen:
 //   - Jobbörse der Bundesagentur für Arbeit (öffentliche API, kein Schlüssel nötig)
+//   - Regionale Börsen: RADIO SALÜ, Saarbrücker Zeitung, stellenangebotesaarland.de, Wochenspiegel (regional.mjs)
 //   - Adzuna (optional, wenn ADZUNA_APP_ID und ADZUNA_APP_KEY gesetzt sind)
 // Fahrzeit:
 //   - OSRM (router.project-osrm.org), Ergebnisse werden in jobs/drive-cache.json gecacht
@@ -12,6 +13,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REGIONAL_SOURCES } from './regional.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -253,20 +255,30 @@ async function geocodeMissing(jobs) {
   // Suchfenster rund um den Startort, damit gleichnamige Orte woanders nicht gewinnen
   const d = 1.0;
   const viewbox = [config.origin.lon - d, config.origin.lat + d, config.origin.lon + d, config.origin.lat - d].join(',');
+  // Bekannte Orte mit PLZ (aus der Arbeitsagentur) als Nachschlagetabelle für Angaben ohne PLZ,
+  // z. B. "Dillingen" (SZ) -> "66763|Dillingen, Saar"; "Sankt Wendel" -> "St. Wendel, Saar"
+  const normPlace = (s) => s.toLowerCase().replace(/\bsankt\b/g, 'st.').replace(/\s*[,/(].*$/, '').replace(/\s+/g, ' ').trim();
+  const twinOf = (name) => {
+    const n = normPlace(name);
+    const hit = jobs.find((j) => j.plz && normPlace(j.ort) === n && cache.places[keyOf(j)]);
+    return hit ? cache.places[keyOf(hit)] : null;
+  };
   for (const key of todo) {
     const [plz, ort] = key.split('|');
-    const place = ort.replace(/,.*$/, '').replace(/\s*\(.*\)$/, '').trim();
+    // Kandidaten: ganze Angabe, jede Teilangabe ("A, B" oder "A/B"), Hauptort vor einem Bindestrich
+    const parts = ort.split(/\s*[,/]\s*/).map((x) => x.replace(/\s*\(.*\)$/, '').trim()).filter((x) => x.length > 2 && !/^saar(land)?$/i.test(x));
+    const candidates = [...new Set([...parts, ...parts.map((x) => x.split('-')[0])])];
     try {
       // Nur die PLZ liefert den Mittelpunkt des PLZ-Gebiets (genauer als die Stadtmitte)
       let c = plz ? await nominatim({ postalcode: plz, countrycodes: 'de' }) : null;
       // Ohne PLZ: gleichnamigen Ort mit PLZ aus den Daten übernehmen ("Neunkirchen, Saar" gibt es mehrfach)
-      if (!c && !plz) {
-        const twin = jobs.find((j) => j.ort === ort && j.plz && cache.places[keyOf(j)]);
-        if (twin) c = cache.places[keyOf(twin)];
+      if (!c && !plz) c = twinOf(ort) || candidates.map(twinOf).find(Boolean) || null;
+      for (const place of candidates) {
+        if (c) break;
+        c = await nominatim({ q: place, countrycodes: 'de,fr,lu', viewbox, bounded: '1' });
+        // Unplausible Treffer verwerfen (Stellen liegen höchstens im Suchradius)
+        if (c && haversineKm(config.origin, c) > config.searchRadiusKm * 1.5) c = null;
       }
-      if (!c && place) c = await nominatim({ q: place, countrycodes: 'de,fr,lu', viewbox, bounded: '1' });
-      // Unplausible Treffer verwerfen (Stellen liegen höchstens im Suchradius)
-      if (c && haversineKm(config.origin, c) > config.searchRadiusKm * 1.5) c = null;
       cache.places[key] = c;
     } catch (err) {
       log(`Geocodierung fehlgeschlagen für ${key}: ${err.message}`);
@@ -278,7 +290,7 @@ async function geocodeMissing(jobs) {
     if (c) { j.lat = c.lat; j.lon = c.lon; }
   }
   const missing = jobs.filter((j) => j.lat == null).length;
-  if (missing) log(`Geocodierung: ${missing} Stellen ohne Koordinaten (werden ausgelassen)`);
+  if (missing) log(`Geocodierung: ${missing} Stellen ohne Koordinaten`);
   await writeFile(GEO_CACHE_FILE, JSON.stringify(cache, null, 0) + '\n');
 }
 
@@ -349,11 +361,19 @@ async function addDriveTimes(jobs) {
 
 const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').trim();
 
+const normOrt = (s) => norm((s || '').replace(/\bSankt\b/g, 'St.').replace(/\s*[,/(].*$/, ''));
+
+// Gleiche Stelle aus mehreren Quellen nur einmal zeigen; die weiteren Quellen werden vermerkt
 function dedupe(jobs) {
   const seen = new Map();
   for (const j of jobs) {
-    const key = `${norm(j.title)}|${norm(j.employer)}|${norm(j.ort)}`;
-    if (!seen.has(key)) seen.set(key, j);
+    const key = `${norm(j.title)}|${norm(j.employer)}|${normOrt(j.ort)}`;
+    const first = seen.get(key);
+    if (!first) seen.set(key, j);
+    else if (first.source !== j.source) {
+      first.alsoAt = [...new Set([...(first.alsoAt || []), j.source])];
+      first.alsoAtUrl ||= j.url;
+    }
   }
   return [...seen.values()];
 }
@@ -367,11 +387,23 @@ async function main() {
   }
   if (!jobs.length) throw new Error('Keine Stellen gefunden – alle Quellen fehlgeschlagen?');
 
+  // Regionale Börsen; Ortsnamen aus den BA-Daten helfen, Orte in Kleinanzeigen zu erkennen
+  const knownTowns = [...new Set(jobs.map((j) => j.ort.replace(/\s*[,(].*$/, '')).filter((o) => o.length > 3))]
+    .sort((a, b) => b.length - a.length);
+  for (const crawl of REGIONAL_SOURCES) {
+    try {
+      jobs.push(...await crawl(log, { knownTowns }));
+    } catch (err) {
+      console.error(`Regionale Quelle fehlgeschlagen (${crawl.name}):`, err.message);
+    }
+  }
+
   await geocodeMissing(jobs);
   await addDriveTimes(jobs);
 
   const filtered = dedupe(jobs)
-    .filter((j) => j.driveMinutes != null && j.driveMinutes <= config.maxDriveMinutes)
+    // Regionale Kleinanzeigen ohne erkennbaren Ort bleiben drin (auf der Seite standardmäßig ausgeblendet)
+    .filter((j) => (j.driveMinutes == null ? j.source !== 'Arbeitsagentur' : j.driveMinutes <= config.maxDriveMinutes))
     .map((j) => ({
       ...j,
       angebotsart: [...j.angebotsart],

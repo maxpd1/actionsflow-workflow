@@ -24,13 +24,27 @@ async function fetchText(url, { encoding = 'utf-8', attempts = 3 } = {}) {
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', ndash: '–', mdash: '—', euro: '€',
-  auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß' };
+  auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', raquo: '»', laquo: '«', bdquo: '„', ldquo: '“', rdquo: '”' };
 const decode = (s) => String(s || '')
   .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
   .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
   .replace(/&([a-z]+);/gi, (m, n) => ENTITIES[n] ?? m);
 const text = (html) => decode(String(html || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 const deDate = (s) => { const m = /(\d{1,2})\.(\d{1,2})\.(\d{2,4})/.exec(s || ''); if (!m) return null; const y = m[3].length === 2 ? `20${m[3]}` : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; };
+
+// Ortsangaben vereinheitlichen: "66117 Saarbrücken" -> PLZ + Ort, Kfz-Kürzel ausschreiben
+const KFZ = { SB: 'Saarbrücken', VK: 'Völklingen', NK: 'Neunkirchen, Saar', HOM: 'Homburg, Saar', SLS: 'Saarlouis', MZG: 'Merzig',
+  WND: 'St. Wendel, Saar', IGB: 'St. Ingbert', DIL: 'Dillingen, Saar', LEB: 'Lebach' };
+export function cleanOrt(raw) {
+  let ort = String(raw || '').replace(/\s+/g, ' ').trim();
+  const plz = /\b(\d{5})\b/.exec(ort)?.[1] || '';
+  ort = ort.replace(/\b\d{5}\b/, '').trim();
+  if (/^(saarland|saarlandweit|bundesweit|deutschlandweit|homeoffice|remote)$/i.test(ort)) ort = '';
+  const abbr = /^([A-ZÄÖÜ]{2,3})(?:[-/ ]|$)/.exec(ort)?.[1];
+  if (abbr && KFZ[abbr]) ort = KFZ[abbr];
+  ort = ort.replace(/\s*\/\s*Saar$/i, ', Saar');
+  return { plz, ort };
+}
 
 function job(fields) {
   return {
@@ -57,7 +71,7 @@ export async function crawlSalue(log) {
     const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => m[1]);
     if (cells.length < 4) continue;
     const href = decode((/href="([^"]+)"/i.exec(cells[0]) || [])[1] || '');
-    const title = text(cells[0]);
+    const title = text(cells[0]).replace(/\s*[»«]+$/, '');
     if (!title || !href) continue;
     const date = (/(\d{4}-\d{2}-\d{2})\.\d+\.(?:pdf|mp3)/.exec(row) || [])[1] || null;
     out.push(job({
@@ -65,7 +79,7 @@ export async function crawlSalue(log) {
       source: 'RADIO SALÜ',
       title,
       employer: text(cells[1]),
-      ort: text(cells[2]),
+      ...cleanOrt(text(cells[2])),
       beruf: text(cells[3]),
       published: date,
       url: new URL(href, base).href,
@@ -119,19 +133,21 @@ export async function crawlStellenangeboteSaarland(log) {
   const base = 'https://stellenangebotesaarland.de/';
   const html = await fetchText(base);
   const out = [];
-  const re = /<a[^>]+href="(https:\/\/stellenangebotesaarland\.de\/[^"]+)"[^>]*>\s*<span[^>]*>\s*<span[^>]*>\s*Zum Stellenangebot/gi;
+  // Jede Karte endet mit dem Button "Zum Stellenangebot"; davor stehen Firma und Titel als
+  // Überschriften und der Ort als erster Eintrag der Symbol-Liste
+  const re = /href="(https:\/\/stellenangebotesaarland\.de\/[^"#]+)"[^>]*>(?:(?!<\/a>)[\s\S]){0,400}?Zum Stellenangebot/gi;
+  const seenUrls = new Set();
   let last = 0;
   for (const m of html.matchAll(re)) {
     const chunk = html.slice(last, m.index);
     last = m.index + m[0].length;
-    // Firma, Titel und Ort stehen direkt vor der Liste der Vorteile
-    const cut = chunk.indexOf('elementor-icon-list');
-    const head = cut > 0 ? chunk.slice(0, cut) : chunk;
-    const pieces = [...head.matchAll(/<(h[1-6]|p|div)[^>]*class="[^"]*(?:heading-title|text-editor|elementor-widget-container)[^"]*"[^>]*>([\s\S]*?)<\/\1>/gi)]
-      .map((x) => text(x[2])).filter(Boolean);
-    const plain = pieces.length >= 3 ? pieces : text(head).split(/\s{2,}/);
-    const [employer, title, ort] = plain.slice(-3);
-    out.push(job({ id: `sas:${m[1]}`, source: 'stellenangebotesaarland.de', title: title || '', employer: employer || '', ort: ort || '', published: null, url: m[1] }));
+    if (seenUrls.has(m[1])) continue;
+    seenUrls.add(m[1]);
+    const headings = [...chunk.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi)].map((x) => text(x[1])).filter(Boolean);
+    const items = [...chunk.matchAll(/<li[^>]*elementor-icon-list-item[^>]*>([\s\S]*?)<\/li>/gi)].map((x) => x[1]);
+    const ortItem = items.find((x) => /map-marker|location/i.test(x)) || items[0] || '';
+    const [employer = '', title = ''] = headings.slice(-2);
+    out.push(job({ id: `sas:${m[1]}`, source: 'stellenangebotesaarland.de', title, employer, ...cleanOrt(text(/elementor-icon-list-text[^>]*>([\s\S]*?)<\/span>/i.exec(ortItem)?.[1])), published: null, url: m[1] }));
   }
   // Detailseiten: Titel und Datum aus dem JobPosting
   for (const j of out) {
@@ -182,6 +198,8 @@ function guessOrt(t, knownTowns) {
 }
 
 export async function crawlWochenspiegel(log, { knownTowns = [] } = {}) {
+  // Kfz-Kürzel wie "HOM" oder "SLS" in Kleinanzeigen als Ort werten
+  knownTowns = [...knownTowns];
   const base = 'https://www.wochenspiegelonline.de';
   const seen = new Map();
   for (const rubrik of WOSPI_RUBRIKEN) {
@@ -199,7 +217,8 @@ export async function crawlWochenspiegel(log, { knownTowns = [] } = {}) {
         const published = deDate(t);
         const title = t.replace(/\s*\d{1,2}\.\d{1,2}\.\d{4}[\s\S]*$/, '').trim();
         if (!title) continue;
-        const { plz, ort } = guessOrt(title, knownTowns);
+        let { plz, ort } = guessOrt(title, knownTowns);
+        if (!ort) { const k = /\b(SB|VK|NK|HOM|SLS|MZG|WND|IGB)\b/.exec(title)?.[1]; if (k) ort = KFZ[k]; }
         seen.set(id, job({
           id: `wospi:${id}`,
           source: 'Wochenspiegel',

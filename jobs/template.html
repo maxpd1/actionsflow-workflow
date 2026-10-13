@@ -123,6 +123,7 @@ ol.list { list-style: none; margin: 16px 0 0; padding: 0; background: var(--surf
 .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .tag { font-size: .8rem; background: var(--chip); border-radius: 4px; padding: 1px 7px; }
 .tag.za { background: var(--warn-soft); color: var(--warn); }
+.tag.src { background: transparent; border: 1px solid var(--line); color: var(--muted); }
 .tag.new { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .date { color: var(--muted); font-size: .9rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .date a { display: block; color: var(--accent); }
@@ -156,6 +157,7 @@ footer a { color: inherit; }
       <div class="field">
         <label class="label" for="f-drive">Max. Fahrzeit <output id="o-drive">30 min</output></label>
         <input id="f-drive" type="range" min="5" max="30" step="1" value="30">
+        <div class="checks" id="unknown-wrap"><label><input id="f-unknown" type="checkbox"> Kleinanzeigen ohne Ortsangabe <span class="n" id="n-unknown"></span></label></div>
       </div>
       <div class="field">
         <label class="label" for="f-ort">Arbeitsort</label>
@@ -213,7 +215,12 @@ footer a { color: inherit; }
 
   <footer id="footer">
     Fahrzeiten sind Autofahrzeiten ohne Verkehr, berechnet mit OpenStreetMap (OSRM). Werte mit „≈“ sind aus der Luftlinie geschätzt.
-    Daten: <a href="https://www.arbeitsagentur.de/jobsuche/" rel="noopener" target="_blank">Jobbörse der Bundesagentur für Arbeit</a><span id="src-extra"></span>.
+    Daten: <a href="https://www.arbeitsagentur.de/jobsuche/" rel="noopener" target="_blank">Jobbörse der Bundesagentur für Arbeit</a>,
+    <a href="https://www.salue.de/jobs/" rel="noopener" target="_blank">RADIO SALÜ Jobbörse</a>,
+    <a href="https://saarbruecker-zeitung.stellenanzeigen.de/" rel="noopener" target="_blank">Stellenmarkt der Saarbrücker Zeitung</a>,
+    <a href="https://stellenangebotesaarland.de/" rel="noopener" target="_blank">stellenangebotesaarland.de</a> und
+    <a href="https://www.wochenspiegelonline.de/anzeigen/job-spiegel" rel="noopener" target="_blank">Wochenspiegel Job-Spiegel</a><span id="src-extra"></span>.
+    Gleiche Stellen aus mehreren Quellen erscheinen nur einmal mit dem Hinweis „auch bei …“.
   </footer>
 </div>
 
@@ -260,7 +267,10 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     const sources = counts('source');
     checkList($('f-src'), sources, 'src');
     $('src-field').hidden = sources.length < 2;
-    if (sources.some(([s]) => s === 'Adzuna')) $('src-extra').textContent = ' und Adzuna';
+    if (sources.some(([s]) => s === 'Adzuna')) $('src-extra').textContent = ' sowie Adzuna';
+    const nUnknown = jobs.filter((j) => j.driveMinutes == null).length;
+    $('n-unknown').textContent = nUnknown.toLocaleString('de-DE');
+    $('unknown-wrap').hidden = !nUnknown;
 
     const towns = counts('ort');
     $('f-ort').insertAdjacentHTML('beforeend',
@@ -275,6 +285,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       return {
         q: $('f-q').value.trim().toLowerCase(),
         drive: +$('f-drive').value,
+        unknown: $('f-unknown').checked,
         ort: $('f-ort').value,
         art: checked($('f-art')),
         zeit: checked($('f-zeit')),
@@ -287,6 +298,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     function applyState(s) {
       $('f-q').value = s.q || '';
       $('f-drive').value = s.drive || maxMin;
+      $('f-unknown').checked = !!s.unknown;
       $('f-ort').value = [...$('f-ort').options].some((o) => o.value === s.ort) ? s.ort : '';
       setChecked($('f-art'), s.art); setChecked($('f-zeit'), s.zeit); setChecked($('f-src'), s.src);
       $('f-days').value = String(s.days || 0);
@@ -311,6 +323,8 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         ...j.arbeitszeit.map((a) => `<span class="tag">${esc(a)}</span>`),
         ...(j.zeitarbeit ? ['<span class="tag za">Zeitarbeit</span>'] : []),
         ...(j.start ? [`<span class="tag">Beginn ${esc(fmtDate(j.start))}</span>`] : []),
+        `<span class="tag src">${esc(j.source)}</span>`,
+        ...(j.alsoAt || []).map((a) => `<span class="tag src">auch bei ${esc(a)}</span>`),
       ].join('');
       const beruf = j.beruf && j.beruf !== j.title ? ` · ${esc(j.beruf)}` : '';
       return `<li class="job">
@@ -318,7 +332,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
           <strong>${d ?? '?'}</strong><span>min</span></div>
         <div>
           <h2><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a></h2>
-          <div class="meta"><span class="emp">${esc(j.employer || 'Arbeitgeber unbekannt')}</span> · ${esc([j.plz, j.ort].filter(Boolean).join(' '))}${beruf}</div>
+          <div class="meta">${j.employer ? `<span class="emp">${esc(j.employer)}</span> · ` : ''}${esc([j.plz, j.ort].filter(Boolean).join(' ') || 'Ort nicht angegeben')}${beruf}</div>
           <div class="tags">${tags}</div>
         </div>
         <div class="date">${esc(fmtDate(j.published))}${j.externalUrl ? `<a href="${esc(j.externalUrl)}" target="_blank" rel="noopener">Originalanzeige</a>` : ''}</div>
@@ -332,7 +346,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       $('o-drive').textContent = `${s.drive} min`;
       const words = s.q.split(/\s+/).filter(Boolean);
       const res = jobs.filter((j) =>
-        (j.driveMinutes ?? Infinity) <= s.drive &&
+        (j.driveMinutes == null ? s.unknown : j.driveMinutes <= s.drive) &&
         (!s.ort || j.ort === s.ort) &&
         (!s.art.length || j.angebotsart.some((a) => s.art.includes(a))) &&
         (!s.zeit.length || j.arbeitszeit.some((a) => s.zeit.includes(a))) &&

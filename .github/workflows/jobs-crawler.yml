@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - "jobs/crawl.mjs"
+      - "jobs/regional.mjs"
       - "jobs/template.html"
       - "jobs/config.json"
       - ".github/workflows/jobs-crawler.yml"
