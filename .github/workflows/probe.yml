@@ -1,0 +1,12 @@
+name: Probe regionale Jobbörsen (temporär)
+on:
+  push:
+    paths: ["jobs/probe.mjs", ".github/workflows/probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node jobs/probe.mjs
