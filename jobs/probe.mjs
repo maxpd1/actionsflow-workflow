@@ -1,27 +1,33 @@
-// Temporär: untersucht die Karriereseiten von juris und adesso.
+// Temporär: untersucht die Bewerberportale von adesso (SuccessFactors) und juris (softgarden).
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36';
-const urls = [
-  'https://www.juris.de/karriere', 'https://www.juris.de/jobs', 'https://karriere.juris.de/',
-  'https://www.adesso.de/de/jobs-karriere/', 'https://www.adesso.de/de/jobs-karriere/unsere-stellenangebote/index.jsp',
-  'https://jobs.adesso-group.com/', 'https://www.adesso.de/de/jobs-karriere/jobs/',
-];
 const flat = (s) => s.replace(/\s+/g, ' ');
-for (const url of urls) {
-  console.log('\n==================== ' + url);
-  try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept-Language': 'de' }, signal: AbortSignal.timeout(30000) });
-    const html = await res.text();
-    console.log('status', res.status, 'final', res.url, 'len', html.length, 'type', res.headers.get('content-type'));
-    console.log('title:', (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim());
-    const links = [...new Set([...html.matchAll(/(?:href|src|data-src|data-url|action)="([^"]+)"/gi)].map((m) => m[1]))];
-    console.log('JOB-LINKS:', links.filter((l) => /job|stelle|karriere|career|bewerb|personio|softgarden|rexx|dvinci|smartrecruit|workday|onlyfy|prescreen|greenhouse|lever|recruit|talent/i.test(l)).slice(0, 80).join('\n  '));
-    console.log('SCRIPTS:', [...html.matchAll(/<script[^>]+src="([^"]+)"/gi)].map((m) => m[1]).filter((s) => !/google|facebook|consent|analytics|gtm|usercentrics|cookie/i.test(s)).slice(0, 30).join(' | '));
-    console.log('IFRAMES:', [...html.matchAll(/<iframe[^>]+src="([^"]+)"/gi)].map((m) => m[1]).join(' | '));
-    console.log('API-ISH:', [...new Set([...html.matchAll(/["'(]((?:https?:)?\/?[^"'\s()]*(?:api|ajax|json|feed|xml|search|widget|embed)[^"'\s()]*)["')]/gi)].map((m) => m[1]))].slice(0, 40).join(' | '));
-    const ld = [...html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => flat(m[1]).slice(0, 400));
-    console.log('LD:', ld.join(' || '));
-    const text = flat(html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
-    const i = text.search(/m\/w\/d|w\/m\/d|all genders|Stellenangebot|offene Stellen/i);
-    console.log('TEXT:', text.slice(Math.max(0, i - 300), i + 1500));
-  } catch (err) { console.log('ERROR', err.message); }
-}
+const get = async (url) => {
+  const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept-Language': 'de' }, signal: AbortSignal.timeout(30000) });
+  const html = await res.text();
+  console.log(`\n==================== ${url}\nstatus ${res.status} final ${res.url} len ${html.length} type ${res.headers.get('content-type')}`);
+  return html;
+};
+const around = (h, re, b = 200, a = 2500) => { const i = h.search(re); return i < 0 ? '(nicht gefunden)' : flat(h.slice(Math.max(0, i - b), i + a)); };
+const tryit = async (fn) => { try { await fn(); } catch (e) { console.log('ERROR', e.message); } };
+
+await tryit(async () => {
+  const h = await get('https://jobs.adesso-group.com/search/?q=&locationsearch=Saarbr%C3%BCcken&locale=de_DE');
+  console.log('ROWS:', (h.match(/class="data-row/g) || []).length, 'pagination:', around(h, /paginationLabel|pagination-label|Ergebnisse \d/i, 50, 300));
+  console.log('ROW:', around(h, /class="data-row/, 50, 2500));
+});
+await tryit(async () => {
+  const h = await get('https://jobs.adesso-group.com/services/rss/job/?locale=de_DE&keywords=(Saarbr%C3%BCcken)');
+  console.log('ITEMS:', (h.match(/<item>/g) || []).length); console.log('XML:', flat(h.slice(0, 3000)));
+});
+await tryit(async () => {
+  const h = await get('https://juris.softgarden.io/');
+  const links = [...new Set([...h.matchAll(/href="([^"]+)"/g)].map((m) => m[1]))];
+  console.log('LINKS:', links.filter((l) => /job|vacanc|stelle/i.test(l)).slice(0, 40).join(' | '));
+  console.log('API-ISH:', [...new Set([...h.matchAll(/["']([^"'\s]*(?:api|json|widget|rss|feed)[^"'\s]*)["']/gi)].map((m) => m[1]))].slice(0, 30).join(' | '));
+  console.log('LIST:', around(h, /matchElement|job-title|jobTitle|class="[^"]*job/i, 200, 3000));
+  console.log('LD:', [...h.matchAll(/<script[^>]+ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => flat(m[1]).slice(0, 500)).join(' || '));
+});
+await tryit(async () => {
+  const h = await get('https://juris.softgarden.io/de/vacancies');
+  console.log('LIST:', around(h, /\/job\/\d+/, 1500, 2500));
+});
