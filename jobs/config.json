@@ -21,5 +21,25 @@
   },
   "maxPagesPerQuery": 100,
   "pageSize": 100,
-  "maxAgeDays": 30
+  "maxAgeDays": 30,
+  "employerPortals": [
+    {
+      "id": "adesso",
+      "type": "successfactors",
+      "source": "Karriereseite adesso",
+      "employer": "adesso SE",
+      "url": "https://jobs.adesso-group.com",
+      "location": "Saarbrücken",
+      "plz": "66113"
+    },
+    {
+      "id": "juris",
+      "type": "softgarden",
+      "source": "Karriereseite juris",
+      "employer": "juris GmbH",
+      "url": "https://juris.softgarden.io",
+      "location": "Saarbrücken",
+      "plz": "66121"
+    }
+  ]
 }

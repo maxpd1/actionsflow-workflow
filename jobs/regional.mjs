@@ -249,4 +249,87 @@ export async function crawlWochenspiegel(log, { knownTowns = [] } = {}) {
   return [...seen.values()];
 }
 
-export const REGIONAL_SOURCES = [crawlSalue, crawlSZ, crawlStellenangeboteSaarland, crawlWochenspiegel];
+// ---------------------------------------------------------------------------
+// Karriereportale einzelner Arbeitgeber (config.json -> employerPortals)
+// ---------------------------------------------------------------------------
+
+// SAP SuccessFactors Career Site (z. B. jobs.adesso-group.com): Suche mit Ortsfilter, 25 Treffer je Seite
+async function crawlSuccessFactors(portal, log) {
+  const out = new Map();
+  for (let start = 0; start < 1000; start += 25) {
+    const qs = new URLSearchParams({ q: '', locationsearch: portal.location, locale: 'de_DE', startrow: String(start) });
+    const html = await fetchText(`${portal.url}/search/?${qs}`);
+    const rows = html.split(/<tr class="data-row/).slice(1);
+    let added = 0;
+    for (const r of rows) {
+      const a = /<a href="(\/job\/[^"]+\/(\d+)\/)"[^>]*class="jobTitle-link"[^>]*>([\s\S]*?)<\/a>/i.exec(r) || /class="jobTitle-link"[^>]*href="(\/job\/[^"]+\/(\d+)\/)"[^>]*>([\s\S]*?)<\/a>/i.exec(r);
+      if (!a || out.has(a[2])) continue;
+      const loc = text(/class="jobLocation"[^>]*>([\s\S]*?)<\/span>/i.exec(r)?.[1]);
+      const km = Number(/class="jobDistance[^"]*"[^>]*>\s*([\d.,]+)\s*km/i.exec(r)?.[1]?.replace(',', '.'));
+      const multi = /weitere/i.test(loc);
+      // Nur Stellen am gesuchten Standort oder mit mehreren Standorten (die Suche hat dann über einen davon getroffen)
+      if (!multi && !new RegExp(portal.location, 'i').test(loc) && !(km <= 30)) continue;
+      out.set(a[2], job({
+        id: `${portal.id}:${a[2]}`,
+        source: portal.source,
+        title: text(a[3]),
+        employer: text(/class="jobFacility[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(r)?.[1]) || portal.employer,
+        ort: portal.location, plz: portal.plz || '',
+        beruf: multi ? 'mehrere Standorte, u. a. ' + portal.location : '',
+        published: deDate(text(/class="jobDate[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(r)?.[1])),
+        url: portal.url + a[1],
+      }));
+      added++;
+    }
+    if (rows.length < 25) break;
+    await sleep(500);
+  }
+  log(`${portal.source}: ${out.size} Stellen`);
+  return [...out.values()];
+}
+
+// softgarden Karriere-Board (z. B. juris.softgarden.io): alle Stellen auf einer Seite
+async function crawlSoftgarden(portal, log) {
+  const html = await fetchText(`${portal.url}/de/vacancies`);
+  const out = [];
+  for (const block of html.split(/<div class="matchElement" id="job_id_/).slice(1)) {
+    const id = /^(\d+)/.exec(block)?.[1];
+    const a = /<a href="\.\.\/(job\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
+    if (!id || !a) continue;
+    const locations = [...block.matchAll(/class="location-view-item"[^>]*>([\s\S]*?)<\/span>/gi)].map((m) => text(m[1]).replace(/,$/, ''));
+    if (locations.length && !locations.some((l) => new RegExp(portal.location, 'i').test(l))) continue;
+    const audience = text(/class="matchValue audience"[^>]*>([\s\S]*?)<\/div>/i.exec(block)?.[1]);
+    const category = text(/class="matchValue jobcategory"[^>]*>([\s\S]*?)<\/div>/i.exec(block)?.[1]);
+    const j = job({
+      id: `${portal.id}:${id}`,
+      source: portal.source,
+      title: text(a[2]),
+      employer: portal.employer,
+      ort: portal.location, plz: portal.plz || '',
+      beruf: [category, audience].filter(Boolean).join(' · '),
+      published: deDate(text(/class="matchValue date"[^>]*>([\s\S]*?)<\/div>/i.exec(block)?.[1])),
+      url: `${portal.url}/${decode(a[1])}`,
+    });
+    if (/auszubild|ausbildung|dual/i.test(audience)) j.angebotsart = new Set(['Ausbildung / Duales Studium']);
+    if (/student|praktik|werkstud|trainee/i.test(audience)) j.angebotsart = new Set(['Praktikum / Trainee']);
+    out.push(j);
+  }
+  log(`${portal.source}: ${out.length} Stellen`);
+  return out;
+}
+
+const PORTAL_TYPES = { successfactors: crawlSuccessFactors, softgarden: crawlSoftgarden };
+
+export async function crawlEmployerPortals(log, { portals = [] } = {}) {
+  const all = [];
+  for (const portal of portals) {
+    try {
+      all.push(...await PORTAL_TYPES[portal.type](portal, log));
+    } catch (err) {
+      log(`${portal.source}: fehlgeschlagen (${err.message})`);
+    }
+  }
+  return all;
+}
+
+export const REGIONAL_SOURCES = [crawlEmployerPortals, crawlSalue, crawlSZ, crawlStellenangeboteSaarland, crawlWochenspiegel];

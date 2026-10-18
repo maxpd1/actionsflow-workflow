@@ -125,6 +125,7 @@ Full documentation for Actionsflow lives [on the website](https://actionsflow.gi
 - **Quellen:**
   - Jobbörse der Bundesagentur für Arbeit (öffentliche API, ohne Schlüssel). Darin stehen auch viele Anzeigen anderer Portale.
   - Regionale Börsen (`jobs/regional.mjs`): RADIO SALÜ Jobbörse, Stellenmarkt der Saarbrücker Zeitung / Pfälzischer Merkur, stellenangebotesaarland.de und die Stellenangebote im Wochenspiegel Job-Spiegel (ohne Stellengesuche). Diese Seiten haben keine Schnittstelle, deshalb wird ihr HTML ausgelesen. Ändert eine Seite ihren Aufbau, fällt nur diese Quelle aus, und im Workflow-Log steht eine Fehlermeldung.
+  - Karriereportale einzelner Arbeitgeber (`employerPortals` in `jobs/config.json`): derzeit adesso (SAP SuccessFactors, Standort Saarbrücken) und juris (softgarden). Weitere Arbeitgeber mit einem SuccessFactors- oder softgarden-Portal lassen sich dort ohne Codeänderung ergänzen.
   - Optional Adzuna: dafür die Repository-Secrets `ADZUNA_APP_ID` und `ADZUNA_APP_KEY` anlegen (kostenlos unter developer.adzuna.com).
   - Dieselbe Stelle aus mehreren Quellen erscheint nur einmal, mit dem Hinweis „auch bei …“.
 - **Fahrzeit:** Autofahrzeit ohne Verkehr über OSRM/OpenStreetMap. Ist der Routing-Dienst nicht erreichbar, wird sie aus der Luftlinie geschätzt (auf der Seite mit „≈“ markiert). Ergebnisse werden in `jobs/drive-cache.json` gecacht.

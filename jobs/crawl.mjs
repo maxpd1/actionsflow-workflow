@@ -411,7 +411,7 @@ async function main() {
     .sort((a, b) => b.length - a.length);
   for (const crawl of REGIONAL_SOURCES) {
     try {
-      jobs.push(...await crawl(log, { knownTowns }));
+      jobs.push(...await crawl(log, { knownTowns, portals: config.employerPortals || [] }));
     } catch (err) {
       console.error(`Regionale Quelle fehlgeschlagen (${crawl.name}):`, err.message);
     }
