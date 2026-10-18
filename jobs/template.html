@@ -177,8 +177,8 @@ footer a { color: inherit; }
       <button id="toggle" type="button" class="toggle" aria-expanded="false" aria-controls="more-filters">Weitere Filter</button>
       <div class="more-filters" id="more-filters">
       <div class="field">
-        <label class="label" for="f-drive">Max. Fahrzeit <output id="o-drive">30 min</output></label>
-        <input id="f-drive" type="range" min="5" max="30" step="1" value="30">
+        <label class="label" for="f-drive">Max. Fahrzeit <output id="o-drive">40 min</output></label>
+        <input id="f-drive" type="range" min="5" max="40" step="1" value="40">
         <div class="checks" id="unknown-wrap"><label><input id="f-unknown" type="checkbox"> Kleinanzeigen ohne Ortsangabe <span class="n" id="n-unknown"></span></label></div>
       </div>
       <div class="field">
@@ -300,6 +300,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     $('hdr-ort').textContent = `${data.plz} ${data.ortName}`;
     $('hdr-sub').textContent = `${jobs.length.toLocaleString('de-DE')} Stellen bis ${maxMin} Minuten Fahrzeit${data.maxAgeDays ? `, nicht älter als ${data.maxAgeDays} Tage` : ''} · Stand ${new Date(data.generated).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}`;
     $('f-drive').max = maxMin;
+    $('f-drive').value = maxMin;
 
     const counts = (key) => {
       const m = new Map();
@@ -333,6 +334,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       return {
         q: $('f-q').value.trim().toLowerCase(),
         drive: +$('f-drive').value,
+        driveAll: +$('f-drive').value >= maxMin,
         unknown: $('f-unknown').checked,
         ort: $('f-ort').value,
         art: checked($('f-art')),
@@ -346,7 +348,8 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     }
     function applyState(s) {
       $('f-q').value = s.q || '';
-      $('f-drive').value = s.drive || maxMin;
+      // "driveAll": Regler stand am Anschlag. Ältere gespeicherte Stände kennen das Feld nicht; damals lag der Anschlag bei 30.
+      $('f-drive').value = (s.driveAll || !s.drive || (!('driveAll' in s) && s.drive >= 30)) ? maxMin : s.drive;
       $('f-unknown').checked = !!s.unknown;
       $('f-ort').value = [...$('f-ort').options].some((o) => o.value === s.ort) ? s.ort : '';
       setChecked($('f-art'), s.art); setChecked($('f-zeit'), s.zeit); setChecked($('f-src'), s.src);

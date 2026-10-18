@@ -120,7 +120,7 @@ Full documentation for Actionsflow lives [on the website](https://actionsflow.gi
 
 # 💼 Stellenanzeigen rund um 66793 Saarwellingen
 
-`jobs/crawl.mjs` sammelt Stellenanzeigen im Umkreis von 66793 und behält nur Stellen, die mit dem Auto in höchstens 30 Minuten erreichbar sind. Das Ergebnis ist eine filterbare HTML-Seite unter [`docs/index.html`](docs/index.html).
+`jobs/crawl.mjs` sammelt Stellenanzeigen im Umkreis von 66793 und behält nur Stellen, die mit dem Auto in höchstens 40 Minuten erreichbar sind (`maxDriveMinutes` in `jobs/config.json`; auf der Seite per Regler weiter einschränkbar). Das Ergebnis ist eine filterbare HTML-Seite unter [`docs/index.html`](docs/index.html).
 
 - **Quellen:**
   - Jobbörse der Bundesagentur für Arbeit (öffentliche API, ohne Schlüssel). Darin stehen auch viele Anzeigen anderer Portale.

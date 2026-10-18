@@ -5,8 +5,8 @@
     "lat": 49.3542,
     "lon": 6.8075
   },
-  "searchRadiusKm": 50,
-  "maxDriveMinutes": 30,
+  "searchRadiusKm": 60,
+  "maxDriveMinutes": 40,
   "angebotsarten": {
     "1": "Arbeit",
     "4": "Ausbildung / Duales Studium",
