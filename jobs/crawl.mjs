@@ -411,7 +411,11 @@ async function main() {
     }))
     .sort((a, b) => (b.published || '').localeCompare(a.published || ''));
 
+  let profiles = [];
+  try { profiles = JSON.parse(await readFile(join(here, 'profiles.json'), 'utf8')).profiles || []; } catch (err) { log(`Profile nicht geladen: ${err.message}`); }
+
   const payload = {
+    profiles,
     generated: new Date().toISOString(),
     plz: config.plz,
     ortName: config.ortName,

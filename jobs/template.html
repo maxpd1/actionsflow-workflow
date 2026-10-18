@@ -123,6 +123,16 @@ ol.list { list-style: none; margin: 16px 0 0; padding: 0; background: var(--surf
 .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .tag { font-size: .8rem; background: var(--chip); border-radius: 4px; padding: 1px 7px; }
 .tag.za { background: var(--warn-soft); color: var(--warn); }
+.profiles { display: grid; gap: 6px; }
+.profiles label { display: flex; gap: 8px; align-items: center; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.profiles label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.profiles input { accent-color: var(--accent); }
+.profiles .n { margin-left: auto; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.profile-desc { color: var(--muted); font-size: .85rem; line-height: 1.4; margin: 0; }
+.fit { display: inline-flex; gap: 6px; align-items: baseline; font-size: .8rem; border-radius: 4px; padding: 1px 7px; background: var(--chip); }
+.fit b { font-weight: 600; }
+.fit.best { background: var(--good-soft); color: var(--good); }
+.fit.good { background: var(--accent-soft); color: var(--accent); }
 .tag.src { background: transparent; border: 1px solid var(--line); color: var(--muted); }
 .tag.new { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .date { color: var(--muted); font-size: .9rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -148,6 +158,11 @@ footer a { color: inherit; }
 
   <div class="layout">
     <aside aria-label="Filter">
+      <div class="field" id="profile-field" hidden>
+        <span class="label">Passt zu meinem Profil</span>
+        <div class="profiles" id="f-profile"></div>
+        <p class="profile-desc" id="profile-desc"></p>
+      </div>
       <div class="field">
         <label class="label" for="f-q">Suche</label>
         <input id="f-q" type="search" placeholder="Titel, Beruf, Arbeitgeber …" autocomplete="off">
@@ -200,6 +215,7 @@ footer a { color: inherit; }
         <div class="sort">
           <label for="f-sort">Sortieren</label>
           <select id="f-sort">
+            <option value="match" id="sort-match" hidden>Beste Passung</option>
             <option value="date">Neueste zuerst</option>
             <option value="drive">Kürzeste Fahrzeit</option>
             <option value="title">Titel A–Z</option>
@@ -248,6 +264,27 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       _text: [j.title, j.beruf, j.employer, j.ort].join(' ').toLowerCase(),
       _age: daysAgo(j.published),
     }));
+
+    // Skill-Profile (jobs/profiles.json): gewichtete Begriffe in Titel, Beruf und Arbeitgeber
+    const profiles = (data.profiles || []).map((p) => ({ ...p, rules: p.rules.map((r) => ({ ...r, re: new RegExp(r.pattern, 'i') })) }));
+    for (const j of jobs) {
+      j._fit = {};
+      const t = [j.title, j.beruf, j.employer].join(' | ');
+      for (const p of profiles) {
+        const hits = p.rules.filter((r) => r.re.test(t));
+        const score = hits.reduce((sum, r) => sum + r.weight, 0);
+        const level = score >= p.bestScore ? 'best' : score >= p.goodScore ? 'good' : score >= p.minScore ? 'part' : null;
+        j._fit[p.id] = { score, level, labels: hits.filter((r) => r.weight > 0).map((r) => r.label) };
+      }
+    }
+    const profileById = Object.fromEntries(profiles.map((p) => [p.id, p]));
+    if (profiles.length) {
+      $('profile-field').hidden = false;
+      $('sort-match').hidden = false;
+      const count = (id) => jobs.filter((j) => j._fit[id].level && (j.driveMinutes != null)).length;
+      $('f-profile').innerHTML = [['', 'Alle Stellen', jobs.filter((j) => j.driveMinutes != null).length], ...profiles.map((p) => [p.id, p.name, count(p.id)])]
+        .map(([id, name, n], i) => `<label><input type="radio" name="profile" id="profile-${i}" value="${esc(id)}"${i ? '' : ' checked'}> ${esc(name)} <span class="n">${n.toLocaleString('de-DE')}</span></label>`).join('');
+    }
     const maxMin = data.maxDriveMinutes || 30;
     $('hdr-ort').textContent = `${data.plz} ${data.ortName}`;
     $('hdr-sub').textContent = `${jobs.length.toLocaleString('de-DE')} Stellen bis ${maxMin} Minuten Fahrzeit · Stand ${new Date(data.generated).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}`;
@@ -293,6 +330,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         src: checked($('f-src')),
         days: +$('f-days').value,
         noza: $('f-noza').checked,
+        profile: document.querySelector('#f-profile input:checked')?.value || '',
         sort: $('f-sort').value,
       };
     }
@@ -304,11 +342,15 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       setChecked($('f-art'), s.art); setChecked($('f-zeit'), s.zeit); setChecked($('f-src'), s.src);
       $('f-days').value = String(s.days || 0);
       $('f-noza').checked = !!s.noza;
+      const pr = document.querySelector(`#f-profile input[value="${CSS.escape(s.profile || '')}"]`) || document.querySelector('#f-profile input');
+      if (pr) pr.checked = true;
       $('f-sort').value = s.sort || 'date';
     }
     try { const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (saved) applyState(saved); } catch (e) {}
 
+    let currentProfile = '';
     const sorters = {
+      match: (a, b) => ((b._fit[currentProfile]?.score ?? 0) - (a._fit[currentProfile]?.score ?? 0)) || (b.published || '').localeCompare(a.published || ''),
       date: (a, b) => (b.published || '').localeCompare(a.published || '') || (a.driveMinutes ?? 99) - (b.driveMinutes ?? 99),
       drive: (a, b) => (a.driveMinutes ?? 999) - (b.driveMinutes ?? 999) || (b.published || '').localeCompare(a.published || ''),
       title: (a, b) => a.title.localeCompare(b.title, 'de'),
@@ -318,7 +360,10 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     function row(j) {
       const d = j.driveMinutes;
       const cls = d == null ? '' : d <= 15 ? 'near' : d > 25 ? 'far' : '';
+      const fit = currentProfile && j._fit[currentProfile];
+      const fitHtml = fit && fit.level ? `<span class="fit ${fit.level}"><b>${{ best: 'Passt sehr gut', good: 'Passt gut', part: 'Passt teilweise' }[fit.level]}</b>${fit.labels.length ? ` ${esc(fit.labels.join(', '))}` : ''}</span>` : '';
       const tags = [
+        ...(fitHtml ? [fitHtml] : []),
         ...(j._age <= 2 ? ['<span class="tag new">Neu</span>'] : []),
         ...j.angebotsart.filter((a) => a !== 'Arbeit').map((a) => `<span class="tag">${esc(a)}</span>`),
         ...j.arbeitszeit.map((a) => `<span class="tag">${esc(a)}</span>`),
@@ -346,6 +391,9 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) {}
       $('o-drive').textContent = `${s.drive} min`;
       const words = s.q.split(/\s+/).filter(Boolean);
+      currentProfile = profileById[s.profile] ? s.profile : '';
+      $('profile-desc').textContent = currentProfile ? `Abgeglichen mit Titel, Berufsbezeichnung und Arbeitgeber: ${profileById[currentProfile].beschreibung}.` : '';
+      if (!currentProfile && s.sort === 'match') $('f-sort').value = 'date';
       const res = jobs.filter((j) =>
         (j.driveMinutes == null ? s.unknown : j.driveMinutes <= s.drive) &&
         (!s.ort || j.ort === s.ort) &&
@@ -354,8 +402,9 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         (!s.src.length || j._sources.some((x) => s.src.includes(x))) &&
         (!s.days || j._age <= s.days) &&
         (!s.noza || !j.zeitarbeit) &&
+        (!currentProfile || j._fit[currentProfile].level) &&
         words.every((w) => j._text.includes(w))
-      ).sort(sorters[s.sort] || sorters.date);
+      ).sort(sorters[$('f-sort').value] || sorters.date);
 
       $('count').innerHTML = `${res.length.toLocaleString('de-DE')} <small>von ${jobs.length.toLocaleString('de-DE')} Stellen</small>`;
       $('list').innerHTML = res.length
@@ -381,6 +430,9 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       const open = document.querySelector('aside').classList.toggle('open');
       $('toggle').setAttribute('aria-expanded', String(open));
       $('toggle').textContent = open ? 'Filter ausblenden' : 'Weitere Filter';
+    });
+    $('f-profile').addEventListener('change', () => {
+      $('f-sort').value = document.querySelector('#f-profile input:checked')?.value ? 'match' : 'date';
     });
     $('reset').addEventListener('click', () => { applyState({}); render(true); });
     render(true);

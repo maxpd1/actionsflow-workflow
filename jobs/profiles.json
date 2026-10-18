@@ -1,0 +1,175 @@
+{
+  "_hinweis": "Skill-Profile für den Filter 'Passt zu meinem Profil'. Jede Regel ist ein regulärer Ausdruck (ohne Groß-/Kleinschreibung), der gegen Titel, Berufsbezeichnung und Arbeitgeber geprüft wird. Treffer addieren ihr Gewicht; negative Gewichte senken die Passung. Ab 'minScore' gilt eine Stelle als passend, ab 'goodScore' als gut, ab 'bestScore' als sehr gut.",
+  "profiles": [
+    {
+      "id": "buchspiel",
+      "name": "Verkauf Buch & Spiel",
+      "beschreibung": "Kundenberatung und Stammkundenpflege, Kasse, Sortimentsgestaltung, Warenbestellung, Warenwirtschaft, Warenpräsentation, Lager, Reservierungen, Retouren und Reklamationen",
+      "minScore": 4,
+      "goodScore": 6,
+      "bestScore": 9,
+      "rules": [
+        {
+          "label": "Buchhandel",
+          "pattern": "buchhand|buchhändler|sortimentsbuch|bücher|buch ?(und|&) ?spiel|thalia|hugendubel|mayersche|osiander|weltbild",
+          "weight": 7
+        },
+        {
+          "label": "Spielwaren",
+          "pattern": "spielwaren|spielzeug|toys|smyths|mytoys|spiele(?!r|n)|brettspiel|modellbau",
+          "weight": 7
+        },
+        {
+          "label": "Schreibwaren / Medien",
+          "pattern": "schreibwaren|papeterie|zeitschriften|presse ?shop|medienhandel|tonträger",
+          "weight": 4
+        },
+        {
+          "label": "Einzelhandel",
+          "pattern": "einzelhandel|einzelhändler|retail|fachhandel",
+          "weight": 4
+        },
+        {
+          "label": "Verkauf",
+          "pattern": "verkäufer|verkaufsberater|verkaufsmitarbeiter|verkaufshilfe|verkaufskraft|mitarbeiter.{0,12}verkauf|im verkauf|verkaufsaufsicht",
+          "weight": 4
+        },
+        {
+          "label": "Kasse",
+          "pattern": "kassierer|kasse|kassen",
+          "weight": 3
+        },
+        {
+          "label": "Kundenberatung",
+          "pattern": "kundenberat|fachberat|kundenbetreu|stammkund|kundenservice",
+          "weight": 2
+        },
+        {
+          "label": "Filiale / Shop",
+          "pattern": "filial|store|shop(?!ware|ify)|ladengeschäft|markt(?!ing|platz)",
+          "weight": 2
+        },
+        {
+          "label": "Sortiment / Warenwirtschaft",
+          "pattern": "sortiment|warenwirtschaft|warenbestell|bestellwesen|disposition|warenpräsentation|visual merchand|warenverräum|regal",
+          "weight": 3
+        },
+        {
+          "label": "Lager / Retouren",
+          "pattern": "lager|retoure|reklamation|wareneingang",
+          "weight": 1
+        },
+        {
+          "label": "Drogerie / Kaufhaus mit Buch & Spiel",
+          "pattern": "müller (handels|drogerie|ltd)|drogerie müller|galeria|kaufhaus|rossmann|dm-drogerie|tedi|woolworth|action\\b|mäc geiz|nanu-nana|depot",
+          "weight": 2
+        },
+        {
+          "label": "Außendienst / Vertrieb B2B",
+          "pattern": "außendienst|aussendienst|key ?account|vertriebsingenieur|handelsvertret|b2b",
+          "weight": -6
+        },
+        {
+          "label": "Fahrzeuge / Immobilien / Finanzen",
+          "pattern": "kfz|kraftfahrzeug|automobil|autohaus|immobili|versicherung|bank|sparkasse|finanz",
+          "weight": -6
+        },
+        {
+          "label": "Lebensmittelhandwerk",
+          "pattern": "fleischerei|metzgerei|bäckerei|konditorei|lebensmittelhandwerk|nahrungsmittelhandwerk|imbiss",
+          "weight": -2
+        },
+        {
+          "label": "Großhandel / Logistik / Fahrer",
+          "pattern": "großhandel|außenhandel|lagerlogistik|stapler|fahrer|kraftverkehr|spedition",
+          "weight": -2
+        },
+        {
+          "label": "Baumarkt / Garten / Möbel / Zoo",
+          "pattern": "garten|pflanzen|zoo|baumarkt|baustoff|möbel|küche|fliesen|holz",
+          "weight": -2
+        },
+        {
+          "label": "Technischer Vertrieb",
+          "pattern": "ingenieur|technische[rn]? (verkaufs|vertrieb)|techniker",
+          "weight": -5
+        }
+      ]
+    },
+    {
+      "id": "qa-ecommerce",
+      "name": "Quality Assurance E-Commerce",
+      "beschreibung": "Qualitätssicherung und Testing im Onlinehandel: Shop- und Software-Tests, Produktdaten- und Content-Qualität, Marktplätze, Prozess- und Qualitätsmanagement",
+      "minScore": 4,
+      "goodScore": 7,
+      "bestScore": 10,
+      "rules": [
+        {
+          "label": "E-Commerce",
+          "pattern": "e-?commerce|onlineshop|online-shop|webshop|e-shop|onlinehandel|online-handel|versandhandel|digital commerce",
+          "weight": 7
+        },
+        {
+          "label": "Quality Assurance",
+          "pattern": "quality assurance|\\bqa\\b|qa[- ]?(engineer|manager|analyst|tester)|quality engineer|quality manager",
+          "weight": 7
+        },
+        {
+          "label": "Software-Test",
+          "pattern": "software-?test|softwaretester|testmanag|testautomat|test ?engineer|testanalyst|teststrateg|qa[- ]?tester|tester(in)? (m|w|d|\\()",
+          "weight": 7
+        },
+        {
+          "label": "Shop-Systeme / Marktplätze",
+          "pattern": "shopware|magento|shopify|woocommerce|salesforce commerce|marketplace|marktplatz|amazon|ebay|otto\\.de|zalando",
+          "weight": 5
+        },
+        {
+          "label": "Qualitätssicherung / -management",
+          "pattern": "qualitätssicher|qualitätsmanag|qualitätskontroll|qualitätsprüf|qualitätsbeauftrag|qs-|qm-|qualität",
+          "weight": 4
+        },
+        {
+          "label": "Produktdaten / Content",
+          "pattern": "produktdaten|stammdaten|pim\\b|content[- ]?manag|katalogmanag|datenqualität|datenpflege",
+          "weight": 4
+        },
+        {
+          "label": "Digital / Online",
+          "pattern": "online[- ]?marketing|digital|web(?!er)|usability|ux|ui/ux|seo|sea\\b|conversion|crm",
+          "weight": 2
+        },
+        {
+          "label": "Produkt / Projekt",
+          "pattern": "product owner|produktmanag|projektmanag|scrum|agil|requirements|anforderungsmanag",
+          "weight": 3
+        },
+        {
+          "label": "Prozesse / Audits",
+          "pattern": "prozessmanag|prozessoptim|audit|iso ?9001|compliance|reklamationsmanag|lieferantenmanag",
+          "weight": 2
+        },
+        {
+          "label": "IT allgemein",
+          "pattern": "informatik|it-|\\bit\\b|software|entwickl|developer|data",
+          "weight": 1
+        },
+        {
+          "label": "Fulfillment / Kundenservice",
+          "pattern": "fulfil|retoure|kundenservice|customer (service|care|success)|support",
+          "weight": 1
+        },
+        {
+          "label": "Gesundheit / Pflege",
+          "pattern": "pflege|gesundheits|sozialwesen|klinik|kranken|hauswirtschaft|senioren",
+          "weight": -3
+        },
+        {
+          "label": "Bau / Handwerk / Produktion",
+          "pattern": "bauleit|bauwesen|schweiß|zerspan|mechaniker|elektriker|monteur|helfer",
+          "weight": -2
+        }
+      ]
+    }
+  ]
+}

@@ -9,6 +9,7 @@ on:
     paths:
       - "jobs/crawl.mjs"
       - "jobs/regional.mjs"
+      - "jobs/profiles.json"
       - "jobs/template.html"
       - "jobs/config.json"
       - ".github/workflows/jobs-crawler.yml"
