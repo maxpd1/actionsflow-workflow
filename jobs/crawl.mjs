@@ -404,6 +404,14 @@ const guessUnit = (v) => (v >= 15000 ? 'Jahr' : v >= 450 ? 'Monat' : 'Std');
 function makeSalary(min, max, unit) {
   if (!min || min <= 0) return null;
   if (max && max === min) max = null;
+  // Platzhalter der Arbeitgeber ("1 – 500.000") und extrem weite Spannen verwerfen
+  if (min <= 1 || (max && max / min > 4)) return null;
+  // Einheit an die Größenordnung anpassen (z. B. "2.700–4.788 € pro Jahr" ist ein Monatsgehalt)
+  const top = max || min;
+  if (unit === 'Jahr' && top < 12000) unit = top < 150 ? 'Std' : 'Monat';
+  else if (unit === 'Monat' && top >= 20000) unit = 'Jahr';
+  else if (unit === 'Monat' && top < 60) unit = 'Std';
+  else if (unit === 'Std' && top >= 450) unit = top >= 15000 ? 'Jahr' : 'Monat';
   const factor = { Std: 173, Monat: 1, Jahr: 1 / 12 }[unit];
   const mid = max ? (min + max) / 2 : min;
   const monthly = Math.round(mid * factor);
