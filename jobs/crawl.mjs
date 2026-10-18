@@ -67,6 +67,7 @@ async function baPage(params, page) {
     umkreis: String(config.searchRadiusKm),
     size: String(config.pageSize),
     page: String(page),
+    ...(config.maxAgeDays ? { veroeffentlichtseit: String(config.maxAgeDays) } : {}),
     ...params,
   });
   const tried = [];
@@ -398,6 +399,14 @@ async function main() {
     }
   }
 
+  // Nur Anzeigen der letzten maxAgeDays Tage; Anzeigen ohne Datum lassen sich nicht prüfen und fallen raus
+  if (config.maxAgeDays) {
+    const cutoff = new Date(Date.now() - config.maxAgeDays * 864e5).toISOString().slice(0, 10);
+    const before = jobs.length;
+    for (let i = jobs.length - 1; i >= 0; i--) if (!jobs[i].published || jobs[i].published < cutoff) jobs.splice(i, 1);
+    log(`Alter: ${before - jobs.length} Anzeigen älter als ${config.maxAgeDays} Tage oder ohne Datum entfernt (Stichtag ${cutoff})`);
+  }
+
   await geocodeMissing(jobs);
   await addDriveTimes(jobs);
 
@@ -420,6 +429,7 @@ async function main() {
     plz: config.plz,
     ortName: config.ortName,
     maxDriveMinutes: config.maxDriveMinutes,
+    maxAgeDays: config.maxAgeDays || null,
     total: filtered.length,
     jobs: filtered,
   };

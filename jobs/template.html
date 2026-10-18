@@ -287,7 +287,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     }
     const maxMin = data.maxDriveMinutes || 30;
     $('hdr-ort').textContent = `${data.plz} ${data.ortName}`;
-    $('hdr-sub').textContent = `${jobs.length.toLocaleString('de-DE')} Stellen bis ${maxMin} Minuten Fahrzeit · Stand ${new Date(data.generated).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}`;
+    $('hdr-sub').textContent = `${jobs.length.toLocaleString('de-DE')} Stellen bis ${maxMin} Minuten Fahrzeit${data.maxAgeDays ? `, nicht älter als ${data.maxAgeDays} Tage` : ''} · Stand ${new Date(data.generated).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}`;
     $('f-drive').max = maxMin;
 
     const counts = (key) => {

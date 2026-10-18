@@ -1,7 +1,10 @@
 {
   "plz": "66793",
   "ortName": "Saarwellingen",
-  "origin": { "lat": 49.3542, "lon": 6.8075 },
+  "origin": {
+    "lat": 49.3542,
+    "lon": 6.8075
+  },
   "searchRadiusKm": 50,
   "maxDriveMinutes": 30,
   "angebotsarten": {
@@ -17,5 +20,6 @@
     "mj": "Minijob"
   },
   "maxPagesPerQuery": 100,
-  "pageSize": 100
+  "pageSize": 100,
+  "maxAgeDays": 30
 }
