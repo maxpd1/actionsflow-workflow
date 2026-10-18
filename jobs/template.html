@@ -95,6 +95,7 @@ button:hover { border-color: var(--accent); }
 
 .summary { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: baseline; justify-content: space-between; }
 .count { font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.show-unknown { font: inherit; font-size: .88rem; font-weight: 400; padding: 2px 10px; border-radius: 999px; margin-left: 8px; color: var(--accent); border-color: var(--accent); background: transparent; vertical-align: middle; }
 .count small { font-family: var(--font-body); font-size: .95rem; color: var(--muted); font-weight: 400; }
 .sort { display: flex; gap: 8px; align-items: center; }
 .sort select { width: auto; }
@@ -315,7 +316,6 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     $('src-field').hidden = sources.length < 2;
     if (sources.some(([s]) => s === 'Adzuna')) $('src-extra').textContent = ' sowie Adzuna';
     const nUnknown = jobs.filter((j) => j.driveMinutes == null).length;
-    $('n-unknown').textContent = nUnknown.toLocaleString('de-DE');
     $('unknown-wrap').hidden = !nUnknown;
 
     const towns = counts('ort');
@@ -404,16 +404,28 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       currentProfile = profileById[s.profile] ? s.profile : '';
       $('profile-desc').textContent = currentProfile ? `Abgeglichen mit Titel, Berufsbezeichnung und Arbeitgeber: ${profileById[currentProfile].beschreibung}.` : '';
       if (!currentProfile && s.sort === 'match') $('f-sort').value = 'date';
-      const base = (j) =>
-        (j.driveMinutes == null ? s.unknown : j.driveMinutes <= s.drive) &&
+      // skip: Filtergruppe, die für die Zahlen an ihren eigenen Optionen ausgelassen wird
+      const base = (j, skip) =>
+        (skip === 'unknown' || (j.driveMinutes == null ? s.unknown : j.driveMinutes <= s.drive)) &&
         (!s.ort || j.ort === s.ort) &&
-        (!s.art.length || j.angebotsart.some((a) => s.art.includes(a))) &&
-        (!s.zeit.length || j.arbeitszeit.some((a) => s.zeit.includes(a))) &&
-        (!s.src.length || j._sources.some((x) => s.src.includes(x))) &&
+        (skip === 'art' || !s.art.length || j.angebotsart.some((a) => s.art.includes(a))) &&
+        (skip === 'zeit' || !s.zeit.length || j.arbeitszeit.some((a) => s.zeit.includes(a))) &&
+        (skip === 'src' || !s.src.length || j._sources.some((x) => s.src.includes(x))) &&
         (!s.days || j._age <= s.days) &&
         (!s.noza || !j.zeitarbeit) &&
+        (skip === 'profile' || skip === 'unknown' || !currentProfile || j._fit[currentProfile].level) &&
         words.every((w) => j._text.includes(w));
-      const pool = jobs.filter(base);
+      const pool = jobs.filter((j) => base(j, 'profile'));
+      // Zahlen an den Checkboxen: wie viele Stellen der Klick ergeben würde
+      for (const [key, field] of [['art', 'angebotsart'], ['zeit', 'arbeitszeit'], ['src', '_sources']]) {
+        const rest = jobs.filter((j) => base(j, key));
+        $(`f-${key}`).querySelectorAll('label').forEach((l) => {
+          const v = l.querySelector('input').value;
+          l.querySelector('.n').textContent = rest.filter((j) => j[field].includes(v)).length.toLocaleString('de-DE');
+        });
+      }
+      const hiddenUnknown = s.unknown ? 0 : jobs.filter((j) => j.driveMinutes == null && base(j, 'unknown')).length;
+      $('n-unknown').textContent = hiddenUnknown ? `+${hiddenUnknown.toLocaleString('de-DE')}` : '';
       // Profilzahlen zeigen, wie viele Stellen mit den übrigen Filtern übrig bleiben
       document.querySelectorAll('[data-profile-count]').forEach((el) => {
         const id = el.dataset.profileCount;
@@ -439,7 +451,8 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         ? '<span class="lbl">Aktive Filter:</span>' + chips.map(([k, v, label]) => `<button type="button" data-k="${k}" data-v="${esc(v)}" aria-label="Filter ${esc(label)} entfernen">${esc(label)}<span aria-hidden="true">×</span></button>`).join('') + (chips.length > 1 ? '<button type="button" class="clear" data-k="all">Alle entfernen</button>' : '')
         : '';
 
-      $('count').innerHTML = `${res.length.toLocaleString('de-DE')} <small>von ${jobs.length.toLocaleString('de-DE')} Stellen</small>`;
+      $('count').innerHTML = `${res.length.toLocaleString('de-DE')} <small>von ${jobs.length.toLocaleString('de-DE')} Stellen</small>` +
+        (hiddenUnknown ? ` <button type="button" class="show-unknown" id="show-unknown">+ ${hiddenUnknown.toLocaleString('de-DE')} Kleinanzeigen ohne Ortsangabe einblenden</button>` : '');
       $('list').innerHTML = res.length
         ? res.slice(0, shown).map(row).join('')
         : '<li class="empty">Keine Stelle passt zu diesen Filtern. Lockere die Fahrzeit oder entferne einzelne Filter.</li>';
@@ -466,6 +479,9 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     });
     $('f-profile').addEventListener('change', () => {
       $('f-sort').value = document.querySelector('#f-profile input:checked')?.value ? 'match' : 'date';
+    });
+    $('count').addEventListener('click', (e) => {
+      if (e.target.id === 'show-unknown') { $('f-unknown').checked = true; render(true); }
     });
     $('active').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;

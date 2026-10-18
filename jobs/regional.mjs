@@ -197,6 +197,14 @@ function guessOrt(t, knownTowns) {
   return { plz, ort: town || '' };
 }
 
+const NOT_A_PLACE = /^(teilzeit|vollzeit|festanstellung|vereinbarung|absprache|minijob|rente|altenpflege|deutsch|bezug|zukunft|ihre[mnr]?|unsere[mnr]?|der|die|das|dem|den|eine[mnr]?|voll|teil|haupt|neben|privat|haushalt|garten|rahmen|raum)$/i;
+function placeAfterPreposition(t) {
+  for (const m of t.matchAll(/\b(?:in|nach|bei|Raum|Großraum|Umgebung)\s+([A-ZÄÖÜ][a-zäöüß]+(?:[-‐][A-ZÄÖÜ][a-zäöüß]+)?)/g)) {
+    if (m[1].length >= 4 && !NOT_A_PLACE.test(m[1].split(/[-‐]/)[0])) return m[1];
+  }
+  return '';
+}
+
 export async function crawlWochenspiegel(log, { knownTowns = [] } = {}) {
   // Kfz-Kürzel wie "HOM" oder "SLS" in Kleinanzeigen als Ort werten
   knownTowns = [...knownTowns];
@@ -219,6 +227,9 @@ export async function crawlWochenspiegel(log, { knownTowns = [] } = {}) {
         if (!title) continue;
         let { plz, ort } = guessOrt(title, knownTowns);
         if (!ort) { const k = /\b(SB|VK|NK|HOM|SLS|MZG|WND|IGB)\b/.exec(title)?.[1]; if (k) ort = KFZ[k]; }
+        if (!ort && /\bsbr\b\.?/i.test(title)) ort = 'Saarbrücken';
+        // Ortsteile ("nach Ommersheim", "in Landsweiler-Reden"): Kandidat übergeben, die Geocodierung prüft ihn
+        if (!ort) ort = placeAfterPreposition(title);
         seen.set(id, job({
           id: `wospi:${id}`,
           source: 'Wochenspiegel',
