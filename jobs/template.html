@@ -98,6 +98,12 @@ button:hover { border-color: var(--accent); }
 .count small { font-family: var(--font-body); font-size: .95rem; color: var(--muted); font-weight: 400; }
 .sort { display: flex; gap: 8px; align-items: center; }
 .sort select { width: auto; }
+.active { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.active[hidden] { display: none; }
+.active .lbl { color: var(--muted); font-size: .85rem; }
+.active button { padding: 3px 10px; border-radius: 999px; font-size: .88rem; background: var(--accent-soft); border-color: var(--accent); color: var(--fg); }
+.active button span { margin-left: 6px; color: var(--accent); font-weight: 700; }
+.active button.clear { background: transparent; border-color: var(--line); color: var(--muted); }
 .towns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .towns button { padding: 3px 10px; border-radius: 999px; background: var(--chip); border-color: transparent; font-size: .9rem; }
 .towns button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
@@ -223,6 +229,7 @@ footer a { color: inherit; }
           </select>
         </div>
       </div>
+      <div class="active" id="active" aria-label="Aktive Filter" hidden></div>
       <div class="towns" id="towns" aria-label="Häufigste Orte"></div>
       <ol class="list" id="list"></ol>
       <div class="more" id="more-wrap" hidden><button id="more" type="button">Weitere anzeigen</button></div>
@@ -250,6 +257,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
   const STORE_KEY = 'jobs-filter-v1';
   let shown = PAGE;
 
+  const slug = (s) => String(s).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmtDate = (d) => d ? new Date(d + (d.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
   const daysAgo = (d) => d ? Math.floor((Date.now() - new Date(d + (d.length === 10 ? 'T00:00:00' : '')).getTime()) / 864e5) : Infinity;
@@ -281,9 +289,9 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     if (profiles.length) {
       $('profile-field').hidden = false;
       $('sort-match').hidden = false;
-      const count = (id) => jobs.filter((j) => j._fit[id].level && (j.driveMinutes != null)).length;
-      $('f-profile').innerHTML = [['', 'Alle Stellen', jobs.filter((j) => j.driveMinutes != null).length], ...profiles.map((p) => [p.id, p.name, count(p.id)])]
-        .map(([id, name, n], i) => `<label><input type="radio" name="profile" id="profile-${i}" value="${esc(id)}"${i ? '' : ' checked'}> ${esc(name)} <span class="n">${n.toLocaleString('de-DE')}</span></label>`).join('');
+      // Zahlen werden in render() passend zu den übrigen aktiven Filtern gesetzt
+      $('f-profile').innerHTML = [['', 'Alle Stellen'], ...profiles.map((p) => [p.id, p.name])]
+        .map(([id, name], i) => `<label><input type="radio" name="profile" id="profile-${slug(id || 'alle')}" value="${esc(id)}"${i ? '' : ' checked'}> ${esc(name)} <span class="n" data-profile-count="${esc(id)}"></span></label>`).join('');
     }
     const maxMin = data.maxDriveMinutes || 30;
     $('hdr-ort').textContent = `${data.plz} ${data.ortName}`;
@@ -296,8 +304,8 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       return [...m.entries()].sort((a, b) => b[1] - a[1]);
     };
     const checkList = (el, entries, name) => {
-      el.innerHTML = entries.map(([v, n], i) =>
-        `<label><input type="checkbox" id="${name}-${i}" value="${esc(v)}"> ${esc(v)} <span class="n">${n.toLocaleString('de-DE')}</span></label>`).join('');
+      el.innerHTML = entries.map(([v, n]) =>
+        `<label><input type="checkbox" id="${name}-${slug(v)}" value="${esc(v)}"> ${esc(v)} <span class="n">${n.toLocaleString('de-DE')}</span></label>`).join('');
     };
     checkList($('f-art'), counts('angebotsart'), 'art');
     checkList($('f-zeit'), counts('arbeitszeit'), 'zeit');
@@ -366,7 +374,9 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         ...(fitHtml ? [fitHtml] : []),
         ...(j._age <= 2 ? ['<span class="tag new">Neu</span>'] : []),
         ...j.angebotsart.filter((a) => a !== 'Arbeit').map((a) => `<span class="tag">${esc(a)}</span>`),
-        ...j.arbeitszeit.map((a) => `<span class="tag">${esc(a)}</span>`),
+        ...(j.arbeitszeit.includes('Vollzeit') && j.arbeitszeit.includes('Teilzeit')
+          ? ['<span class="tag">Vollzeit oder Teilzeit</span>', ...j.arbeitszeit.filter((a) => a !== 'Vollzeit' && a !== 'Teilzeit').map((a) => `<span class="tag">${esc(a)}</span>`)]
+          : j.arbeitszeit.map((a) => `<span class="tag">${esc(a)}</span>`)),
         ...(j.zeitarbeit ? ['<span class="tag za">Zeitarbeit</span>'] : []),
         ...(j.start ? [`<span class="tag">Beginn ${esc(fmtDate(j.start))}</span>`] : []),
         `<span class="tag src">${esc(j.source)}</span>`,
@@ -394,7 +404,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       currentProfile = profileById[s.profile] ? s.profile : '';
       $('profile-desc').textContent = currentProfile ? `Abgeglichen mit Titel, Berufsbezeichnung und Arbeitgeber: ${profileById[currentProfile].beschreibung}.` : '';
       if (!currentProfile && s.sort === 'match') $('f-sort').value = 'date';
-      const res = jobs.filter((j) =>
+      const base = (j) =>
         (j.driveMinutes == null ? s.unknown : j.driveMinutes <= s.drive) &&
         (!s.ort || j.ort === s.ort) &&
         (!s.art.length || j.angebotsart.some((a) => s.art.includes(a))) &&
@@ -402,9 +412,32 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         (!s.src.length || j._sources.some((x) => s.src.includes(x))) &&
         (!s.days || j._age <= s.days) &&
         (!s.noza || !j.zeitarbeit) &&
-        (!currentProfile || j._fit[currentProfile].level) &&
-        words.every((w) => j._text.includes(w))
-      ).sort(sorters[$('f-sort').value] || sorters.date);
+        words.every((w) => j._text.includes(w));
+      const pool = jobs.filter(base);
+      // Profilzahlen zeigen, wie viele Stellen mit den übrigen Filtern übrig bleiben
+      document.querySelectorAll('[data-profile-count]').forEach((el) => {
+        const id = el.dataset.profileCount;
+        el.textContent = (id ? pool.filter((j) => j._fit[id].level).length : pool.length).toLocaleString('de-DE');
+      });
+      const res = pool.filter((j) => !currentProfile || j._fit[currentProfile].level)
+        .sort(sorters[$('f-sort').value] || sorters.date);
+
+      // Aktive Filter sichtbar machen (auch die eingeklappten), jeweils einzeln entfernbar
+      const chips = [];
+      if (currentProfile) chips.push(['profile', '', `Profil: ${profileById[currentProfile].name}`]);
+      if (s.q) chips.push(['q', '', `Suche: „${s.q}“`]);
+      if (s.drive < maxMin) chips.push(['drive', '', `bis ${s.drive} min`]);
+      if (s.ort) chips.push(['ort', '', s.ort]);
+      s.art.forEach((v) => chips.push(['art', v, v]));
+      s.zeit.forEach((v) => chips.push(['zeit', v, v]));
+      s.src.forEach((v) => chips.push(['src', v, `Quelle: ${v}`]));
+      if (s.days) chips.push(['days', '', `letzte ${s.days} ${s.days === 1 ? 'Tag' : 'Tage'}`]);
+      if (s.noza) chips.push(['noza', '', 'ohne Zeitarbeit']);
+      if (s.unknown) chips.push(['unknown', '', 'mit Kleinanzeigen ohne Ort']);
+      $('active').hidden = !chips.length;
+      $('active').innerHTML = chips.length
+        ? '<span class="lbl">Aktive Filter:</span>' + chips.map(([k, v, label]) => `<button type="button" data-k="${k}" data-v="${esc(v)}" aria-label="Filter ${esc(label)} entfernen">${esc(label)}<span aria-hidden="true">×</span></button>`).join('') + (chips.length > 1 ? '<button type="button" class="clear" data-k="all">Alle entfernen</button>' : '')
+        : '';
 
       $('count').innerHTML = `${res.length.toLocaleString('de-DE')} <small>von ${jobs.length.toLocaleString('de-DE')} Stellen</small>`;
       $('list').innerHTML = res.length
@@ -433,6 +466,20 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
     });
     $('f-profile').addEventListener('change', () => {
       $('f-sort').value = document.querySelector('#f-profile input:checked')?.value ? 'match' : 'date';
+    });
+    $('active').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      const { k, v } = b.dataset;
+      if (k === 'all') applyState({ sort: $('f-sort').value === 'match' ? 'date' : $('f-sort').value });
+      else if (k === 'profile') { document.querySelector('#f-profile input[value=""]').checked = true; if ($('f-sort').value === 'match') $('f-sort').value = 'date'; }
+      else if (k === 'q') $('f-q').value = '';
+      else if (k === 'drive') $('f-drive').value = maxMin;
+      else if (k === 'ort') $('f-ort').value = '';
+      else if (k === 'days') $('f-days').value = '0';
+      else if (k === 'noza') $('f-noza').checked = false;
+      else if (k === 'unknown') $('f-unknown').checked = false;
+      else document.querySelectorAll(`#f-${k} input`).forEach((i) => { if (i.value === v) i.checked = false; });
+      render(true);
     });
     $('reset').addEventListener('click', () => { applyState({}); render(true); });
     render(true);

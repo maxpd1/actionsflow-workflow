@@ -362,6 +362,24 @@ async function addDriveTimes(jobs) {
 
 const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').trim();
 
+// Die Arbeitsagentur markiert manche Teilzeit- oder Minijob-Stellen als Vollzeit.
+// Eine eindeutige Angabe im Titel hat deshalb Vorrang vor der Markierung.
+function fixArbeitszeit(j) {
+  const t = j.title || '';
+  const hours = Number((/(\d{1,2})(?:[,.]\d+)?\s*(?:std|stunden|h)\b\.?\s*(?:\/|pro|je|in der)?\s*(?:wo|woche)/i.exec(t) || [])[1]);
+  const percent = Number((/\b(\d{2})\s*%/.exec(t) || [])[1]);
+  const part = /teilzeit|teil-\s|\btz\b|halbtags/i.test(t) || (hours > 0 && hours < 30) || (percent > 0 && percent < 90);
+  const full = /vollzeit|voll-\s|\bvz\b/i.test(t) || (hours >= 35 && !part);
+  const mini = /minijob|mini-job|geringfügig|\b(520|538|556|603)\s*(€|euro|eur)|auf (450|520|538|556|603)/i.test(t);
+  const set = j.arbeitszeit;
+  if (full) set.add('Vollzeit');
+  if (part) set.add('Teilzeit');
+  if (mini) set.add('Minijob');
+  // Nur bei eindeutigem Titel widersprechende Markierungen entfernen
+  if ((part || mini) && !full) set.delete('Vollzeit');
+  if (full && !part && !mini) { set.delete('Teilzeit'); set.delete('Minijob'); }
+}
+
 const normOrt = (s) => norm((s || '').replace(/\bSankt\b/g, 'St.').replace(/\s*[,/(].*$/, ''));
 
 // Gleiche Stelle aus mehreren Quellen nur einmal zeigen; die weiteren Quellen werden vermerkt
@@ -407,6 +425,7 @@ async function main() {
     log(`Alter: ${before - jobs.length} Anzeigen älter als ${config.maxAgeDays} Tage oder ohne Datum entfernt (Stichtag ${cutoff})`);
   }
 
+  jobs.forEach(fixArbeitszeit);
   await geocodeMissing(jobs);
   await addDriveTimes(jobs);
 
