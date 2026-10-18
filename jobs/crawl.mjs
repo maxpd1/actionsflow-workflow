@@ -81,6 +81,8 @@ async function baPage(params, page) {
         const sample = baItems(res.data)[0];
         log(`BA-API: verwende ${path} mit Header-Variante ${hi + 1}; Antwortfelder: ${Object.keys(res.data).join(', ')}`);
         if (sample) log(`BA-API: Felder einer Stelle: ${JSON.stringify(sample).slice(0, 1500)}`);
+        const vals = new Set(baItems(res.data).map((x) => `${x.verguetungsangabe}/${x.artDerVerguetung}`));
+        log(`BA-API: Vergütungsangaben auf Seite 1: ${[...vals].join(', ')}`);
       }
       return res.data;
     }
@@ -128,6 +130,19 @@ function findCoords(obj, depth = 0) {
   return null;
 }
 
+// Gehaltsangabe der BA: gehaltsspanneVon/-Bis bzw. Einzelwert, Einheit aus verguetungsangabe
+function baSalary(raw) {
+  const num = (v) => (v == null || v === '' || isNaN(Number(v)) ? null : Number(v));
+  let min = num(raw.gehaltsspanneVon ?? raw.gehaltVon ?? raw.gehalt ?? raw.verguetungVon);
+  let max = num(raw.gehaltsspanneBis ?? raw.gehaltBis ?? raw.verguetungBis);
+  if (!min && !max) return null;
+  if (!min) min = max;
+  if (max != null && max < min) [min, max] = [max, min];
+  const art = String(raw.verguetungsangabe || raw.gehaltsangabe || raw.verguetungseinheit || '');
+  const unit = /stunde/i.test(art) ? 'Std' : /jahr/i.test(art) ? 'Jahr' : /monat/i.test(art) ? 'Monat' : guessUnit(min);
+  return makeSalary(min, max, unit);
+}
+
 function baNormalize(raw) {
   const refnr = baRefnr(raw);
   const ort = raw.arbeitsort || raw.arbeitsorte?.[0] || raw.arbeitsortAdresse || raw.stellenlokationen?.[0]?.adresse || {};
@@ -150,6 +165,7 @@ function baNormalize(raw) {
     angebotsart: new Set(),
     arbeitszeit: new Set(),
     zeitarbeit: true, // wird unten auf false gesetzt, wenn die Stelle in der Suche ohne Zeitarbeit auftaucht
+    salary: baSalary(raw),
   };
 }
 
@@ -218,6 +234,7 @@ async function crawlAdzuna() {
           { full_time: ['Vollzeit'], part_time: ['Teilzeit'] }[r.contract_time] || [],
         ),
         zeitarbeit: false,
+        salary: r.salary_min || r.salary_max ? makeSalary(r.salary_min || r.salary_max, r.salary_max || null, 'Jahr') : null,
         salaryMin: r.salary_min ?? null,
         salaryMax: r.salary_max ?? null,
       });
@@ -380,6 +397,45 @@ function fixArbeitszeit(j) {
   if (full && !part && !mini) { set.delete('Teilzeit'); set.delete('Minijob'); }
 }
 
+// ---------------------------------------------------------------------------
+// Gehalt: einheitliches Format { min, max, unit: 'Std'|'Monat'|'Jahr', monthly }
+// ---------------------------------------------------------------------------
+const guessUnit = (v) => (v >= 15000 ? 'Jahr' : v >= 450 ? 'Monat' : 'Std');
+function makeSalary(min, max, unit) {
+  if (!min || min <= 0) return null;
+  if (max && max === min) max = null;
+  const factor = { Std: 173, Monat: 1, Jahr: 1 / 12 }[unit];
+  const mid = max ? (min + max) / 2 : min;
+  const monthly = Math.round(mid * factor);
+  // Unplausible Werte (z. B. Tippfehler oder Stückzahlen) verwerfen
+  if (monthly < 300 || monthly > 30000) return null;
+  return { min, max: max || null, unit, monthly };
+}
+
+// Gehalt aus dem Titel lesen ("18 €/Std.", "16,36 €/h", "3.200 € brutto/Monat", "45.000–55.000 € p.a.")
+function salaryFromTitle(t) {
+  const n = (x) => Number(String(x).replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+  const amount = String.raw`(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)`;
+  const re = new RegExp(`${amount}\\s*(?:€|euro|eur)?\\s*(?:-|–|bis)\\s*${amount}\\s*(?:€|euro|eur)|${amount}\\s*(?:€|euro|eur)`, 'gi');
+  for (const m of t.matchAll(re)) {
+    const before = t.slice(Math.max(0, m.index - 25), m.index);
+    const after = t.slice(m.index + m[0].length, m.index + m[0].length + 25);
+    // Prämien, Boni und Zuschüsse sind kein Gehalt
+    if (/prämie|bonus|zuschuss|zulage|gutschein|provision|sachbezug/i.test(after.slice(0, 20)) || /(prämie|bonus|zuschuss|zulage|gutschein)\s*(von|in höhe von|i\.?\s?h\.?\s?v\.?)?\s*(bis\s*(zu)?)?\s*$/i.test(before)) continue;
+    const upTo = !m[2] && /\bbis\s*(zu\s*)?$/i.test(before);
+    const first = n(m[1] ?? m[3]);
+    const second = m[2] ? n(m[2]) : null;
+    const unit = /^\s*(?:brutto\s*)?(?:\/|pro|je|die)?\s*(?:std|stunde|h\b)/i.test(after) ? 'Std'
+      : /^\s*(?:brutto\s*)?(?:\/|pro|im|je)?\s*(?:monat|mtl|mon\b)/i.test(after) ? 'Monat'
+      : /^\s*(?:brutto\s*)?(?:\/|pro|im|je)?\s*(?:jahr|p\.\s?a\.|jährlich)/i.test(after) ? 'Jahr'
+      : guessUnit(second || first);
+    const sal = makeSalary(first, second, unit);
+    if (sal && upTo) sal.upTo = true;
+    if (sal) return sal;
+  }
+  return null;
+}
+
 const normOrt = (s) => norm((s || '').replace(/\bSankt\b/g, 'St.').replace(/\s*[,/(].*$/, ''));
 
 // Gleiche Stelle aus mehreren Quellen nur einmal zeigen; die weiteren Quellen werden vermerkt
@@ -426,6 +482,8 @@ async function main() {
   }
 
   jobs.forEach(fixArbeitszeit);
+  for (const j of jobs) if (!j.salary) j.salary = salaryFromTitle(j.title || '');
+  log(`Gehalt: ${jobs.filter((j) => j.salary).length} von ${jobs.length} Anzeigen mit Gehaltsangabe`);
   await geocodeMissing(jobs);
   await addDriveTimes(jobs);
 

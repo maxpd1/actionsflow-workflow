@@ -111,7 +111,7 @@ button:hover { border-color: var(--accent); }
 .towns b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); margin-left: 4px; }
 
 ol.list { list-style: none; margin: 16px 0 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-.job { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 14px; padding: 14px 16px; border-top: 1px solid var(--line); align-items: start; }
+.job { display: grid; grid-template-columns: 64px minmax(0, 1fr) 9.5rem auto; gap: 14px; padding: 14px 16px; border-top: 1px solid var(--line); align-items: start; }
 .job:first-child { border-top: 0; }
 .drive {
   font-family: var(--font-display); text-align: center; border-radius: 8px; padding: 6px 0 4px;
@@ -142,10 +142,20 @@ ol.list { list-style: none; margin: 16px 0 0; padding: 0; background: var(--surf
 .fit.good { background: var(--accent-soft); color: var(--accent); }
 .tag.src { background: transparent; border: 1px solid var(--line); color: var(--muted); }
 .tag.new { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.salary { text-align: right; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.salary b { display: block; font-weight: 600; color: var(--good); }
+.salary small { display: block; color: var(--muted); font-size: .78rem; }
+.salary .none { color: var(--muted); font-size: .85rem; }
+.list-head { display: grid; grid-template-columns: 64px minmax(0, 1fr) 9.5rem auto; gap: 14px; padding: 8px 16px 0; font-family: var(--font-display); font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.list-head span:nth-child(3), .list-head span:nth-child(4) { text-align: right; }
 .date { color: var(--muted); font-size: .9rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .date a { display: block; color: var(--accent); }
 @media (max-width: 560px) {
   .job { grid-template-columns: 56px minmax(0, 1fr); }
+  .list-head { display: none; }
+  .salary { grid-column: 2; text-align: left; margin-bottom: -10px; }
+  .salary b, .salary small { display: inline; margin-right: 6px; }
+  .salary .none { display: none; }
   .date { grid-column: 2; text-align: left; }
   .date a { display: inline; margin-left: 8px; }
 }
@@ -207,6 +217,7 @@ footer a { color: inherit; }
       <div class="field">
         <span class="label">Sonstiges</span>
         <div class="checks"><label><input id="f-noza" type="checkbox"> Zeitarbeit ausblenden</label></div>
+        <div class="checks"><label><input id="f-salary" type="checkbox"> Nur mit Gehaltsangabe <span class="n" id="n-salary"></span></label></div>
       </div>
       <div class="field" id="src-field">
         <span class="label">Quelle</span>
@@ -225,6 +236,7 @@ footer a { color: inherit; }
             <option value="match" id="sort-match" hidden>Beste Passung</option>
             <option value="date">Neueste zuerst</option>
             <option value="drive">Kürzeste Fahrzeit</option>
+            <option value="salary">Höchstes Gehalt</option>
             <option value="title">Titel A–Z</option>
             <option value="employer">Arbeitgeber A–Z</option>
           </select>
@@ -232,6 +244,7 @@ footer a { color: inherit; }
       </div>
       <div class="active" id="active" aria-label="Aktive Filter" hidden></div>
       <div class="towns" id="towns" aria-label="Häufigste Orte"></div>
+      <div class="list-head" aria-hidden="true"><span>Fahrt</span><span>Stelle</span><span>Gehalt</span><span>Datum</span></div>
       <ol class="list" id="list"></ol>
       <div class="more" id="more-wrap" hidden><button id="more" type="button">Weitere anzeigen</button></div>
     </main>
@@ -342,6 +355,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         src: checked($('f-src')),
         days: +$('f-days').value,
         noza: $('f-noza').checked,
+        salary: $('f-salary').checked,
         profile: document.querySelector('#f-profile input:checked')?.value || '',
         sort: $('f-sort').value,
       };
@@ -355,6 +369,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       setChecked($('f-art'), s.art); setChecked($('f-zeit'), s.zeit); setChecked($('f-src'), s.src);
       $('f-days').value = String(s.days || 0);
       $('f-noza').checked = !!s.noza;
+      $('f-salary').checked = !!s.salary;
       const pr = document.querySelector(`#f-profile input[value="${CSS.escape(s.profile || '')}"]`) || document.querySelector('#f-profile input');
       if (pr) pr.checked = true;
       $('f-sort').value = s.sort || 'date';
@@ -366,10 +381,19 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       match: (a, b) => ((b._fit[currentProfile]?.score ?? 0) - (a._fit[currentProfile]?.score ?? 0)) || (b.published || '').localeCompare(a.published || ''),
       date: (a, b) => (b.published || '').localeCompare(a.published || '') || (a.driveMinutes ?? 99) - (b.driveMinutes ?? 99),
       drive: (a, b) => (a.driveMinutes ?? 999) - (b.driveMinutes ?? 999) || (b.published || '').localeCompare(a.published || ''),
+      salary: (a, b) => (b.salary?.monthly ?? -1) - (a.salary?.monthly ?? -1) || (b.published || '').localeCompare(a.published || ''),
       title: (a, b) => a.title.localeCompare(b.title, 'de'),
       employer: (a, b) => (a.employer || '').localeCompare(b.employer || '', 'de'),
     };
 
+    const eur = (v) => v.toLocaleString('de-DE', { minimumFractionDigits: v < 100 && v % 1 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
+    function salaryHtml(sal) {
+      if (!sal) return '<span class="none">k. A.</span>';
+      const unit = { Std: '€/Std.', Monat: '€/Monat', Jahr: '€/Jahr' }[sal.unit];
+      const main = sal.max ? `${eur(sal.min)}–${eur(sal.max)} ${unit}` : `${sal.upTo ? 'bis ' : ''}${eur(sal.min)} ${unit}`;
+      const hint = sal.unit === 'Std' ? `≈ ${eur(sal.monthly)} €/Monat bei Vollzeit` : sal.unit === 'Jahr' ? `≈ ${eur(sal.monthly)} €/Monat` : '';
+      return `<b>${esc(main)}</b>${hint ? `<small>${esc(hint)}</small>` : ''}`;
+    }
     function row(j) {
       const d = j.driveMinutes;
       const cls = d == null ? '' : d <= 15 ? 'near' : d > 25 ? 'far' : '';
@@ -396,6 +420,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
           <div class="meta">${j.employer ? `<span class="emp">${esc(j.employer)}</span> · ` : ''}${esc([j.plz, j.ort].filter(Boolean).join(' ') || 'Ort nicht angegeben')}${beruf}</div>
           <div class="tags">${tags}</div>
         </div>
+        <div class="salary">${salaryHtml(j.salary)}</div>
         <div class="date">${esc(fmtDate(j.published))}${j.externalUrl ? `<a href="${esc(j.externalUrl)}" target="_blank" rel="noopener">Originalanzeige</a>` : ''}</div>
       </li>`;
     }
@@ -418,6 +443,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
         (skip === 'src' || !s.src.length || j._sources.some((x) => s.src.includes(x))) &&
         (!s.days || j._age <= s.days) &&
         (!s.noza || !j.zeitarbeit) &&
+        (skip === 'salary' || !s.salary || j.salary) &&
         (skip === 'profile' || skip === 'unknown' || !currentProfile || j._fit[currentProfile].level) &&
         words.every((w) => j._text.includes(w));
       const pool = jobs.filter((j) => base(j, 'profile'));
@@ -429,6 +455,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
           l.querySelector('.n').textContent = rest.filter((j) => j[field].includes(v)).length.toLocaleString('de-DE');
         });
       }
+      $('n-salary').textContent = jobs.filter((j) => j.salary && base(j, 'salary') && (!currentProfile || j._fit[currentProfile].level)).length.toLocaleString('de-DE');
       const hiddenUnknown = s.unknown ? 0 : jobs.filter((j) => j.driveMinutes == null && base(j, 'unknown')).length;
       $('n-unknown').textContent = hiddenUnknown ? `+${hiddenUnknown.toLocaleString('de-DE')}` : '';
       // Profilzahlen zeigen, wie viele Stellen mit den übrigen Filtern übrig bleiben
@@ -450,6 +477,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       s.src.forEach((v) => chips.push(['src', v, `Quelle: ${v}`]));
       if (s.days) chips.push(['days', '', `letzte ${s.days} ${s.days === 1 ? 'Tag' : 'Tage'}`]);
       if (s.noza) chips.push(['noza', '', 'ohne Zeitarbeit']);
+      if (s.salary) chips.push(['salary', '', 'mit Gehaltsangabe']);
       if (s.unknown) chips.push(['unknown', '', 'mit Kleinanzeigen ohne Ort']);
       $('active').hidden = !chips.length;
       $('active').innerHTML = chips.length
@@ -498,6 +526,7 @@ window.JOBS_DATA = /*__JOBS_DATA__*/null;
       else if (k === 'ort') $('f-ort').value = '';
       else if (k === 'days') $('f-days').value = '0';
       else if (k === 'noza') $('f-noza').checked = false;
+      else if (k === 'salary') $('f-salary').checked = false;
       else if (k === 'unknown') $('f-unknown').checked = false;
       else document.querySelectorAll(`#f-${k} input`).forEach((i) => { if (i.value === v) i.checked = false; });
       render(true);
